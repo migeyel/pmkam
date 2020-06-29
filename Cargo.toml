@@ -2,7 +2,7 @@
 name = "pmkam"
 description = "GPU Krist vanity address miner based on OpenCL"
 version = "0.4.0"
-authors = ["miguel"]
+authors = ["Miguel Oliveira <miguel.oliveira4224@gmail.com>"]
 edition = "2018"
 license = "GPL-3.0-or-later"
 

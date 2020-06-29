@@ -568,12 +568,14 @@ fn print_usage(program_name: &str) {
     println!("This is a prefix-only miner with multiple term support. Put the terms you want to \
               look for in a \"terms.txt\" file. Results are written to the \"results.txt\" file \
               as well as presented on the screen.");
-    println!("Usage:
-    {0} mine [device_0 [device_1 [...]]] - Starts the miner with some devices
-    {0} mine all - Starts the miner with all devices
-    {0} list - Displays all devices
-    {0} help - Displays this
-    ", program_name);
+    println!("Some parts of this program are licensed under different terms and are attributed \
+              to their respective authors. This includes all dependencies from crates.io and part \
+              of the kernel.cl file.");
+    println!("Usage:\n\t\
+              {0} mine [device_0 [device_1 [...]]] - Starts the miner with some devices\n\t\
+              {0} mine all - Starts the miner with all devices\n\t\
+              {0} list - Displays all devices\n\t\
+              {0} help - Displays this", program_name);
 }
 
 pub fn main() {

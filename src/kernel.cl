@@ -3,6 +3,8 @@
 // https://github.com/tmpim/kristforge/tree/legacy
 // Licensed under MIT
 
+// Sha256
+
 // types
 #define UCHARV uchar
 #define UINTV uint
@@ -152,6 +154,8 @@ void digest119(uchar *data, uint inputLen, uchar *hash) {
     // finish
     sha256_finish(H, hash);
 }
+
+// Address miner
 
 #define THREAD_ITER 4096 // How many addresses each work unit checks
 #define CHAIN_SIZE (16 * 8) // 16 stored iterations with 8 bytes each
