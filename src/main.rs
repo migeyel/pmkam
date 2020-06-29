@@ -6,7 +6,7 @@ extern crate sha2;
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::path::Path;
-use ocl::{Buffer, MemFlags, Platform, Device, Context, Queue, Program, Kernel, SpatialDims};
+use ocl::{Buffer, MemFlags, Platform, Device, ProQue, Kernel, SpatialDims};
 use std::time::{Instant, Duration};
 use sha2::{Sha256, Digest};
 use std::cmp;
@@ -199,7 +199,7 @@ fn print_devices(devices: &Vec<Device>) {
 
 struct Miner {
     id: usize,
-    queue: Queue,
+    pq_ocl: ProQue,
     kernel: Kernel,
     solved_buffer: Buffer<u8>,
     pkey_buffer: Buffer<u8>,
@@ -215,6 +215,7 @@ impl Miner {
         trie: &Vec<u16>,
         id: usize,
         device: Device,
+        platform: &Platform,
         tx: Sender<(usize, Option<Vec<u8>>, f64)>
     ) -> ocl::Result<Self> {
         // Get local work size from device
@@ -224,48 +225,43 @@ impl Miner {
             _ => 0_usize
         };
 
-        // Build OpenCL structures
-        let context = Context::builder()
-            .devices(device)
+        // Build ProQue
+        let pq_ocl = ProQue::builder()
+            .platform(platform.clone())
+            .device(device)
+            .src(KERNEL_SRC)
             .build()?;
-        let queue = Queue::new(&context, device, None)?;
-        let program = Program::builder()
-            .source(KERNEL_SRC)
-            .build(&context)?;
 
         // Build buffers
         let entropy_buffer = Buffer::builder()
-            .queue(queue.clone())
+            .queue(pq_ocl.queue().clone())
             .flags(MemFlags::new().read_only())
             .len(10)
             .copy_host_slice(entropy)
             .build()?;
 
         let trie_buffer = Buffer::builder()
-            .queue(queue.clone())
+            .queue(pq_ocl.queue().clone())
             .flags(MemFlags::new().read_only())
             .len(trie.len())
             .copy_host_slice(&trie)
             .build()?;
 
         let solved_buffer: Buffer<u8> = Buffer::builder()
-            .queue(queue.clone())
+            .queue(pq_ocl.queue().clone())
             .flags(MemFlags::new().write_only())
             .len(1)
             .copy_host_slice(&[0])
             .build()?;
 
         let pkey_buffer: Buffer<u8> = Buffer::builder()
-            .queue(queue.clone())
+            .queue(pq_ocl.queue().clone())
             .flags(MemFlags::new().write_only())
             .len(32)
             .build()?;
 
         // Build kernel
-        let kernel = Kernel::builder()
-            .queue(queue.clone())
-            .program(&program)
-            .name("mine")
+        let kernel = pq_ocl.kernel_builder("mine")
             .global_work_size(local_size)
             .arg_named("entropy", &entropy_buffer)
             .arg_named("trie", &trie_buffer)
@@ -276,7 +272,7 @@ impl Miner {
 
         Ok(Self {
             id,
-            queue,
+            pq_ocl,
             kernel,
             solved_buffer,
             pkey_buffer,
@@ -295,7 +291,7 @@ impl Miner {
 
             // Enqueue kernel and wait for it
             unsafe { self.kernel.enq() }.expect("Enqueue kernel");
-            self.queue.finish().expect("Finish queue");
+            self.pq_ocl.finish().expect("Finish queue");
 
             // Read from solved
             self.solved_buffer.read(&mut vec_solved).enq()
@@ -342,10 +338,13 @@ impl Miner {
 fn mine(program_name: &str, arguments: Vec<String>) {
     // Parse arguments
     let all_devices = get_all_devices();
+    let all_platforms = Platform::list();
     let mut devices = Vec::new();
+    let mut device_platform = Vec::new();
     if arguments.len() == 0 || arguments[0] == "all" {
-        for device in all_devices {
-            devices.push(device);
+        for i in 0..all_devices.len() {
+            devices.push(all_devices[i]);
+            device_platform.push(&all_platforms[i]);
         }
     } else {
         let mut user_selected = vec![false; all_devices.len()];
@@ -366,7 +365,8 @@ fn mine(program_name: &str, arguments: Vec<String>) {
         }
         for i in 0..all_devices.len() {
             if user_selected[i] {
-                devices.push(devices[i]);
+                devices.push(all_devices[i]);
+                device_platform.push(&all_platforms[i]);
             }
         }
     }
@@ -420,7 +420,7 @@ fn mine(program_name: &str, arguments: Vec<String>) {
     }
 
     // Make miners
-    println!("Starting miner...");
+    println!("Starting miners...");
     let (tx, rx) = mpsc::channel();
     let mut miners = Vec::new();
     for i in 0..devices.len() {
@@ -431,6 +431,7 @@ fn mine(program_name: &str, arguments: Vec<String>) {
             &trie,
             i,
             devices[i],
+            device_platform[i],
             tx.clone()
         );
         let miner = match miner {
