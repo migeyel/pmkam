@@ -75,13 +75,13 @@ fn make_v2_address(pkey: &[u8]) -> String {
 /// Adds a branch node to a trie at a certain index. Updates the index to the index of the added
 /// branch. Does nothing if a leaf node exists in the same place and follows a branch (without
 /// adding other) if one exists in the same place.
-fn add_branch(trie: &mut Vec<u16>, index: &mut usize, position: u8) {
+fn add_branch(trie: &mut Vec<u32>, index: &mut usize, position: u8) {
     let data = trie[*index + position as usize];
     if data == 0 { // Empty
         // Add a new branch
         let new_index = (trie.len() / 6) - (*index / 6);
         for _ in 0..6 {trie.push(0)}
-        trie[*index + position as usize] = new_index as u16 + 1;
+        trie[*index + position as usize] = new_index as u32 + 1;
         *index += new_index * 6;
     } else if data == 1 { // Leaf
         // A shorter prefix already exists, nothing to be done
@@ -93,7 +93,7 @@ fn add_branch(trie: &mut Vec<u16>, index: &mut usize, position: u8) {
 
 /// Adds a leaf node to a trie at a certain index. Does nothing if either a branch node or a leaf
 /// node already exists in the same place.
-fn add_leaf(trie: &mut Vec<u16>, index: &usize, position: u8) {
+fn add_leaf(trie: &mut Vec<u32>, index: &usize, position: u8) {
     let data = trie[*index + position as usize];
     if data == 0 { // Empty
         // Add the leaf
@@ -108,7 +108,7 @@ fn add_leaf(trie: &mut Vec<u16>, index: &usize, position: u8) {
 
 /// Makes a 6-ary trie (a.k.a prefix tree) out of a list of terms. Redundant terms (either repeated
 /// terms or one term which is the result from appending to a shorter term) are ignored.
-fn add_terms(trie: &mut Vec<u16>, prefixes: &Vec<&str>) {
+fn add_terms(trie: &mut Vec<u32>, prefixes: &Vec<&str>) {
     // Sort terms by shortest first
     let mut prefixes = prefixes.clone();
     prefixes.sort_unstable_by(
@@ -222,7 +222,7 @@ struct Miner {
 impl Miner {
     fn new(
         entropy: &[u8],
-        trie: &Vec<u16>,
+        trie: &Vec<u32>,
         id: usize,
         platform_device: PlatformDevice,
         tx: Sender<(usize, Option<Vec<u8>>, f64)>
@@ -401,13 +401,9 @@ fn mine(program_name: &str, arguments: Vec<String>) {
     for word in terms_string.split_ascii_whitespace() {
         terms.push(word)
     }
-    let mut trie = vec![0_u16; 6];
+    let mut trie = vec![0_u32; 6];
     add_terms(&mut trie, &terms);
-    println!("Term tree size: {} Bytes", trie.len() * 2);
-    if trie.len() * 2 >= (1 << 16) - (10 + 4 * 64 + 16) {
-        println!("WARNING: The total size of the term tree is larger than 64kB. The device \
-                  might not have enough memory. If that is the case, try using fewer terms");
-    }
+    println!("Term tree size: {} Bytes", trie.len() * 4);
     println!("Loaded {} terms", terms.len());
 
     // Present devices

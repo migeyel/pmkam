@@ -287,9 +287,9 @@ inline void shift_protein_and_chain(PROTEIN_T *protein, HASH_CHAIN_T *chain) {
 // 0 - Dead end
 // 1 - There are valid prefixes
 // 2 - There is a full term that matches this
-inline int iter_prefix_search(const uchar addr_char, uint* index, __constant const ushort *trie) {
+inline int iter_prefix_search(const uchar addr_char, uint* index, __global const uint *trie) {
     uchar sub_byte;
-    ushort trie_data;
+    uint trie_data;
 
     sub_byte = addr_char % 6;
     trie_data = trie[*index + sub_byte];
@@ -316,7 +316,7 @@ inline int iter_prefix_search(const uchar addr_char, uint* index, __constant con
 
 // Given a hash chain, uses its information to generate an address without hashing anything
 // such that the resulting address' pkey can be found from the seed that constructed the hash chain
-inline bool check_address(PROTEIN_T *protein, const HASH_CHAIN_T *chain,__constant const ushort *trie) {
+inline bool check_address(PROTEIN_T *protein, const HASH_CHAIN_T *chain,__global const uint *trie) {
     uint chain_index = chain->start;
     uint link;
     uint iter = 0;
@@ -362,7 +362,7 @@ inline bool check_address(PROTEIN_T *protein, const HASH_CHAIN_T *chain,__consta
 
 __kernel void mine(
     __constant const uchar *entropy,      // 10 bytes
-    __constant const ushort *trie,        // Variable size
+    __global const uint *trie,            // Variable size
     const ulong nonce,
     __global uchar *solved,               // 1 byte
     __global uchar *pkey                  // 32 bytes
