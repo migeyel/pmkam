@@ -162,7 +162,7 @@ fn get_all_devices() -> Vec<PlatformDevice> {
                 for device in platform_devices {
                     result.push(PlatformDevice {
                         device,
-                        platform: platform.clone(),
+                        platform,
                     });
                 }
             }
@@ -224,7 +224,7 @@ impl Miner {
         entropy: &[u8],
         trie: &Vec<u16>,
         id: usize,
-        platform_device: &PlatformDevice,
+        platform_device: PlatformDevice,
         tx: Sender<(usize, Option<Vec<u8>>, f64)>
     ) -> ocl::Result<Self> {
         let platform = platform_device.platform;
@@ -239,7 +239,7 @@ impl Miner {
 
         // Build ProQue
         let pq_ocl = ProQue::builder()
-            .platform(platform.clone())
+            .platform(platform)
             .device(device)
             .src(KERNEL_SRC)
             .build()?;
@@ -439,7 +439,7 @@ fn mine(program_name: &str, arguments: Vec<String>) {
             &entropy,
             &trie,
             i,
-            &platforms_and_devices[i],
+            platforms_and_devices[i],
             tx.clone(),
         );
         let miner = match miner {
