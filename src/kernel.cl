@@ -288,30 +288,17 @@ inline void shift_protein_and_chain(PROTEIN_T *protein, HASH_CHAIN_T *chain) {
 // 1 - There are valid prefixes
 // 2 - There is a full term that matches this
 inline int iter_prefix_search(const uchar addr_char, uint* index, __global const uint *trie) {
-    uchar sub_byte;
     uint trie_data;
 
-    sub_byte = addr_char % 6;
-    trie_data = trie[*index + sub_byte];
+    trie_data = trie[*index + addr_char];
     if (trie_data == 0) {
         return 0;
     } else if (trie_data == 1) {
         return 2;
     } else {
-        *index += (trie_data - 1) * 6;
+        *index += (trie_data - 1) * 36;
+        return 1;
     }
-
-    sub_byte = addr_char / 6;
-    trie_data = trie[*index + sub_byte];
-    if (trie_data == 0) {
-        return 0;
-    } else if (trie_data == 1) {
-        return 2;
-    } else {
-        *index += (trie_data - 1) * 6;
-    }
-
-    return 1;
 }
 
 // Given a hash chain, uses its information to generate an address without hashing anything

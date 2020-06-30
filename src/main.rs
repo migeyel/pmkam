@@ -80,15 +80,15 @@ fn add_branch(trie: &mut Vec<u32>, index: &mut usize, position: u8) {
     let data = trie[*index + position as usize];
     if data == 0 { // Empty
         // Add a new branch
-        let new_index = (trie.len() / 6) - (*index / 6);
-        for _ in 0..6 {trie.push(0)}
+        let new_index = (trie.len() / 36) - (*index / 36);
+        for _ in 0..36 {trie.push(0)}
         trie[*index + position as usize] = new_index as u32 + 1;
-        *index += new_index * 6;
+        *index += new_index * 36;
     } else if data == 1 { // Leaf
         // A shorter prefix already exists, nothing to be done
     } else { // Branch
         // Follow the branch that already exists
-        *index += (data - 1) as usize * 6;
+        *index += (data - 1) as usize * 36;
     }
 }
 
@@ -107,7 +107,7 @@ fn add_leaf(trie: &mut Vec<u32>, index: &usize, position: u8) {
     }
 }
 
-/// Makes a 6-ary trie (a.k.a prefix tree) out of a list of terms. Redundant terms (either repeated
+/// Makes a 36-ary trie (a.k.a prefix tree) out of a list of terms. Redundant terms (either repeated
 /// terms or one term which is the result from appending to a shorter term) are ignored.
 fn add_terms(trie: &mut Vec<u32>, prefixes: &Vec<&str>) {
     // Sort terms by shortest first
@@ -123,25 +123,15 @@ fn add_terms(trie: &mut Vec<u32>, prefixes: &Vec<&str>) {
             }
     );
 
-    // Put each term in the "trie form":
-    // '0'..='9' becomes 0_u8..=9_u8 while 'a'..='z' becomes 10_u8..=35_u8
-    // Then make two "sub_bytes" from each character in the term:
-    // sub_bytes[2] = [trie_form(char) % 6, trie_form(char) / 6]
-    // Then put those sub_bytes into the 6-ary trie
     for prefix in prefixes {
-        let mut sub_bytes = [0_u8; 18];
         let prefix_bytes = prefix.as_bytes();
-        for i in 0..min(prefix.len(), 9) {
-            sub_bytes[2 * i] = TRIE_REV_ADDRESS_LOOKUP[prefix_bytes[i] as usize] % 6;
-            sub_bytes[2 * i + 1] = TRIE_REV_ADDRESS_LOOKUP[prefix_bytes[i] as usize] / 6;
-        }
-
         let mut index: usize = 0;
-        for i in 0..2 * min(prefix.len(), 9) {
-            if i == (2 * prefix.len() - 1) {
-                add_leaf(trie, &index, sub_bytes[i]);
+        for i in 0..min(prefix.len(), 9) {
+            let trie_byte = TRIE_REV_ADDRESS_LOOKUP[prefix_bytes[i] as usize];
+            if i == prefix.len() - 1 {
+                add_leaf(trie, &index, trie_byte);
             } else {
-                add_branch(trie, &mut index, sub_bytes[i]);
+                add_branch(trie, &mut index, trie_byte);
             }
         }
     }
@@ -402,7 +392,7 @@ fn mine(program_name: &str, arguments: Vec<String>) {
     for word in terms_string.split_ascii_whitespace() {
         terms.push(word)
     }
-    let mut trie = vec![0_u32; 6];
+    let mut trie = vec![0_u32; 36];
     add_terms(&mut trie, &terms);
     println!("Term tree size: {} Bytes", trie.len() * 4);
     println!("Loaded {} terms", terms.len());
