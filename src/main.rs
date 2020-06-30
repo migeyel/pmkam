@@ -146,7 +146,13 @@ fn add_terms(trie: &mut Vec<u16>, prefixes: &Vec<&str>) {
     }
 }
 
-fn get_all_devices() -> Vec<(Platform, Device)> {
+#[derive(Clone, Copy)]
+struct PlatformDevice {
+    platform: Platform,
+    device: Device,
+}
+
+fn get_all_devices() -> Vec<PlatformDevice> {
     let mut result = Vec::new();
     let platforms = Platform::list();
     for platform in platforms {
@@ -154,7 +160,10 @@ fn get_all_devices() -> Vec<(Platform, Device)> {
         match platform_devices {
             Ok(platform_devices) => {
                 for device in platform_devices {
-                    result.push((platform.clone(), device));
+                    result.push(PlatformDevice {
+                        device,
+                        platform: platform.clone(),
+                    });
                 }
             }
             Err(e) => {
@@ -167,13 +176,13 @@ fn get_all_devices() -> Vec<(Platform, Device)> {
 }
 
 fn print_all_devices() {
-    let devices = get_all_devices();
-    println!("Found {} devices", devices.len());
-    for i in 0..devices.len() {
-        let device = devices[i];
+    let platform_devices = get_all_devices();
+    println!("Found {} devices", platform_devices.len());
+    for i in 0..platform_devices.len() {
+        let device = platform_devices[i].device;
         let mut buffer = String::new();
         buffer += &format!("Device {}:\n", i);
-        let name = device.1.name();
+        let name = device.name();
         match name {
             Ok(name) => {
                 buffer += &format!("\tName: {}\n", name);
@@ -183,7 +192,7 @@ fn print_all_devices() {
                 continue;
             }
         }
-        let vendor = device.1.vendor();
+        let vendor = device.vendor();
         match vendor {
             Ok(vendor) => {
                 buffer += &format!("\tVendor: {}\n", vendor);
@@ -215,10 +224,12 @@ impl Miner {
         entropy: &[u8],
         trie: &Vec<u16>,
         id: usize,
-        platform: &Platform,
-        device: &Device,
+        platform_device: &PlatformDevice,
         tx: Sender<(usize, Option<Vec<u8>>, f64)>
     ) -> ocl::Result<Self> {
+        let platform = platform_device.platform;
+        let device = platform_device.device;
+
         // Get local work size from device
         let local_size = device.info(DeviceInfo::MaxWorkGroupSize)?;
         let local_size = match local_size {
@@ -338,14 +349,14 @@ impl Miner {
 
 fn mine(program_name: &str, arguments: Vec<String>) {
     // Parse arguments
-    let all_devices = get_all_devices();
-    let mut devices = Vec::new();
+    let all_devices_and_platforms = get_all_devices();
+    let mut platforms_and_devices = Vec::new();
     if arguments.len() == 0 || arguments[0] == "all" {
-        for i in 0..all_devices.len() {
-            devices.push(all_devices[i]);
+        for i in 0..all_devices_and_platforms.len() {
+            platforms_and_devices.push(all_devices_and_platforms[i]);
         }
     } else {
-        let mut user_selected = vec![false; all_devices.len()];
+        let mut user_selected = vec![false; all_devices_and_platforms.len()];
         for i in 0..arguments.len() {
             let arg = &arguments[i];
             let arg = match arg.parse::<usize>() {
@@ -355,15 +366,15 @@ fn mine(program_name: &str, arguments: Vec<String>) {
                     continue;
                 },
             };
-            if arg >= all_devices.len() {
+            if arg >= all_devices_and_platforms.len() {
                 println!("ERROR: Argument {} (\"{}\") indicates an unavailable device", i, arg);
                 continue;
             }
             user_selected[arg] = true;
         }
-        for i in 0..all_devices.len() {
+        for i in 0..all_devices_and_platforms.len() {
             if user_selected[i] {
-                devices.push(all_devices[i]);
+                platforms_and_devices.push(all_devices_and_platforms[i]);
             }
         }
     }
@@ -400,16 +411,17 @@ fn mine(program_name: &str, arguments: Vec<String>) {
     println!("Loaded {} terms", terms.len());
 
     // Present devices
-    println!("Using {} devices:", devices.len());
-    if devices.len() == 0 {
+    println!("Using {} devices:", platforms_and_devices.len());
+    if platforms_and_devices.len() == 0 {
         println!("NOTE: Run {} list to list all devices", program_name);
         println!(
             "NOTE: Run {} mine [id device_0 [device_1 [...]]] to mine with some devices",
             program_name
         );
     }
-    for device in devices.iter() {
-        let name = match device.1.name() {
+    for platform_and_device in platforms_and_devices.iter() {
+        let device = platform_and_device.device;
+        let name = match device.name() {
             Ok(name) => name,
             Err(_) => continue,
         };
@@ -420,15 +432,14 @@ fn mine(program_name: &str, arguments: Vec<String>) {
     println!("Starting miners...");
     let (tx, rx) = mpsc::channel();
     let mut miners = Vec::new();
-    for i in 0..devices.len() {
+    for i in 0..platforms_and_devices.len() {
         let mut entropy = [0_u8; 10];
         getrandom::getrandom(&mut entropy).expect("Get system entropy");
         let miner = Miner::new(
             &entropy,
             &trie,
             i,
-            &(devices[i].0),
-            &(devices[i].1),
+            &platforms_and_devices[i],
             tx.clone(),
         );
         let miner = match miner {
