@@ -27,6 +27,7 @@ const TERMS_PATH: &str = "terms.txt";
 const SOLUTIONS_PATH: &str = "solutions.txt";
 const DESIRED_ITER_TIME: f64 = 1_f64;
 const PRINT_HASH_RATE_INTERVAL: f64 = 1_f64;
+const AVERAGE_HASHRATE_ITER_COUNT: usize = 10_usize; 
 
 /// Hashes a byte slice into a byte array, Krist style.
 ///
@@ -447,9 +448,10 @@ fn mine(program_name: &str, arguments: Vec<String>) {
         };
         miners.push(miner);
     }
-    let mut hash_rates = vec![0_f64; miners.len()];
+    let mut hash_rates = Vec::new();
     for mut miner in miners {
         thread::spawn(move || miner.mine());
+        hash_rates.push(vec![0_f64]);
     }
 
     let solutions_file = OpenOptions::new()
@@ -468,20 +470,15 @@ fn mine(program_name: &str, arguments: Vec<String>) {
     let mut num_solutions = 0;
     let t_start = Instant::now();
     loop {
-        let mut hash_rate_counts = vec![0_f64; hash_rates.len()];
-
         // Fetch results from miner threads
         let mut solutions = Vec::new();
         let results = rx.try_iter();
         for result in results {
             let (id, pkey, hash_rate) = result;
 
-            if hash_rate_counts[id] == 0_f64 {
-                hash_rates[id] = hash_rate;
-                hash_rate_counts[id] = 1_f64;
-            } else {
-                hash_rates[id] += hash_rate;
-                hash_rate_counts[id] += 1_f64;
+            hash_rates[id].push(hash_rate);
+            if hash_rates[id].len() > AVERAGE_HASHRATE_ITER_COUNT {
+                hash_rates[id].remove(0);
             }
 
             if let Some(pkey) = pkey {
@@ -506,15 +503,14 @@ fn mine(program_name: &str, arguments: Vec<String>) {
         // Compute and format hash rate
         // Average each miner's rate if there's more than 1, use rate from last loop if there's none
         let mut total_hash_rate = 0_f64;
-        for id in 0..hash_rates.len() {
-            let miner_hr;
-            if hash_rate_counts[id] == 0_f64 {
-                miner_hr = hash_rates[id];
-            } else {
-                miner_hr = hash_rates[id] / hash_rate_counts[id];
-                hash_rates[id] = miner_hr;
+        for i in 0..hash_rates.len() {
+            if hash_rates[i].len() != 0 {
+                let mut miner_hr = 0_f64;
+                for hr in hash_rates[i].iter() {
+                    miner_hr += *hr;
+                }
+                total_hash_rate += miner_hr / hash_rates[i].len() as f64;
             }
-            total_hash_rate += miner_hr;
         }
         if total_hash_rate > 1E9 {
             info_buffer += &format!("{:>6.3} GA/s", total_hash_rate / 1E9);
