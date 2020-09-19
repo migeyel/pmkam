@@ -196,9 +196,13 @@ inline uchar make_address_byte_s(uchar byte) {
 
 // A 'hash chain'
 // Composed of:
-// -chain: the first 8 bytes from every hash that is outputted from iterating sha256
-// -last_hash: the (32-byte) hash from the last iteration
-// -start: (8 * (how many iterations have occured)) % (chain size)
+// - chain: A circular buffer with the first 8 bytes from every hash that is
+//          outputted from iterating sha256.
+// - last_hash: The (32-byte) hash from the last iteration.
+// - chain_start: The write pointer for the chain buffer.
+// - protein: A circular buffer with trie_char form of the first byte from each
+//            chain hash, shifted back by 18 iterations.
+// - protein_start: The write pointer for the protein buffer.
 //
 // Instead of doing 30+ hashes for every address we check, we iterate
 // the hash several times and put the result in an array, referred to here
@@ -212,36 +216,17 @@ inline uchar make_address_byte_s(uchar byte) {
 // we only store that (as well as the seed and last hash, so we can shift).
 typedef struct HASH_CHAIN_T {
     uchar last_hash[32];
-    uint start;
+    uint chain_start;
     uchar chain[CHAIN_SIZE];
+    uchar protein[18];
+    uint protein_start;
 } HASH_CHAIN_T;
 
-// makev2address' protein table
-// Composed of:
-// chars_even - 9 address chars (in trie_char form)
-// chars_odd - 9 address chars (in trie_char form)
-// chars - a pointer that points to either *chars_even or *chars_odd
-// is_even - bool that tells if we're in an even or odd cicle
-//
-// The protein struct is used to reduce the size of the full chain.
-// It stores the first byte of what the chain stored up to 18 iterations ago.
-// This works because Kristwallet only needs the first byte from the first
-// 18 iterations to make an address.
-// Since the chain shifts every hash but the protein uses double hashing,
-// we need to keep track of 2 parallel proteins that come from either the
-// odd positions or the even positions in the chain. 
-typedef struct PROTEIN_T {
-    uchar chars_even[9];
-    uchar chars_odd[9];
-    uchar *chars;
-    bool is_even;
-    uchar start;
-} PROTEIN_T;
-
 // Advances a hash chain by 1 iteration:
-// -sets last_hash to sha256(last_hash)
-// -overwrites the next 8 bytes starting from start with the first 8 bytes from last_hash
-// -increments start by 8 (modulo the chain size)
+// - Sets last_hash to sha256(last_hash).
+// - Writes the address byte from the first byte from the chain buffer to the
+//   protein buffer.
+// - Writes the first 8 bytes from last_hash to the chain buffer.
 inline void shift_chain(HASH_CHAIN_T *chain) {
     uchar hash_hex[128] = "";
 
@@ -254,25 +239,14 @@ inline void shift_chain(HASH_CHAIN_T *chain) {
         hash_hex[2 * i + 1] = h + (h < 10 ? '0' : 'a' - 10);
     }
     digest119(hash_hex, 64, chain->last_hash);
-    for (int i = 0; i < 8; i++) {
-        chain->chain[chain->start + i] = chain->last_hash[i];
-    }
-    chain->start = (chain->start + 8) % CHAIN_SIZE;
-}
 
-// Advances a protein and a chain by 1 iteration
-inline void shift_protein_and_chain(PROTEIN_T *protein, HASH_CHAIN_T *chain) {
-    if (protein->is_even) {
-        protein->chars_even[protein->start] = make_address_byte_s(chain->chain[chain->start]);
-        protein->is_even = false;
-        protein->chars = protein->chars_odd;
-    } else {
-        protein->chars_odd[protein->start] = make_address_byte_s(chain->chain[chain->start]);
-        protein->start = (protein->start + 1) % 9;
-        protein->is_even = true;
-        protein->chars = protein->chars_even;
+    chain->protein[chain->protein_start] = make_address_byte_s(chain->chain[chain->chain_start]);
+    chain->protein_start = (chain->protein_start + 1) % 18;
+
+    for (int i = 0; i < 8; i++) {
+        chain->chain[chain->chain_start + i] = chain->last_hash[i];
     }
-    shift_chain(chain);
+    chain->chain_start = (chain->chain_start + 8) % CHAIN_SIZE;
 }
 
 // 0 - Dead end
@@ -294,8 +268,8 @@ inline int iter_prefix_search(const uchar addr_char, uint* index, __global const
 
 // Given a hash chain, uses its information to generate an address without hashing anything
 // such that the resulting address' pkey can be found from the seed that constructed the hash chain
-inline bool check_address(PROTEIN_T *protein, const HASH_CHAIN_T *chain,__global const uint *trie) {
-    uint chain_index = chain->start;
+inline bool check_address(const HASH_CHAIN_T *chain,__global const uint *trie) {
+    uint chain_index = chain->chain_start;
     uint link;
     uint iter = 0;
     uchar v2[9];
@@ -306,7 +280,7 @@ inline bool check_address(PROTEIN_T *protein, const HASH_CHAIN_T *chain,__global
     while (i < 8 && iter < MAX_CHAIN_ITER) {
         link = chain->chain[chain_index + i] % 9;
         if (!used_protein[link]) {
-            v2[i] = protein->chars[(protein->start + link) % 9];
+            v2[i] = chain->protein[(chain->protein_start + 2 * link) % 18];
             used_protein[link] = true;
 
             int found = iter_prefix_search(v2[i], &trie_index, trie);
@@ -330,7 +304,7 @@ inline bool check_address(PROTEIN_T *protein, const HASH_CHAIN_T *chain,__global
     // Put in last char in the address
     for (i = 0; i < 9; i++) {
         if (!used_protein[i]) {
-            v2[8] = protein->chars[(protein->start + i) % 9];
+            v2[8] = chain->protein[(chain->protein_start + 2 * i) % 18];
             break;
         }
     }
@@ -371,11 +345,8 @@ __kernel void mine(
 
     // Make chain and protein
     HASH_CHAIN_T chain;
-    chain.start = 0;
-
-    PROTEIN_T protein;
-    protein.start = 0;
-    protein.is_even = true;
+    chain.chain_start = 0;
+    chain.protein_start = 0;
 
     // Put seed into the last chain hash
     for (int i = 0; i < 32; i++) {
@@ -386,22 +357,22 @@ __kernel void mine(
     shift_chain(&chain); // krist's makev2address hashes the pkey twice before doing its thing
     shift_chain(&chain); // if the address from 0 or 1 was a match, we would not have the key without doing this
 
-    for (int i = 0; i < CHAIN_SIZE; i += 8) {
-        shift_protein_and_chain(&protein, &chain);
-    }
     for (int i = 1; i < 18; i++) {
-        shift_protein_and_chain(&protein, &chain);
+        shift_chain(&chain);
+    }
+    for (int i = 0; i < CHAIN_SIZE; i += 8) {
+        shift_chain(&chain);
     }
 
     // Mine
     bool solution_found = false;
     uint solution_found_at;
     for (int i = 0; i < THREAD_ITER; i++) {
-        if (check_address(&protein, &chain, trie)) {
+        if (check_address(&chain, trie)) {
             solution_found = true;
             solution_found_at = i;
         }
-        shift_protein_and_chain(&protein, &chain);
+        shift_chain(&chain);
     }
 
     // Re-do hashes to find proper pkey
