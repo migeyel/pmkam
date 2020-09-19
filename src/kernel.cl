@@ -2,29 +2,20 @@
 // Sha256 code from kristforge (legacy branch)
 // https://github.com/tmpim/kristforge/tree/legacy
 // Licensed under MIT
+// Modifications licensed under the pmkam project license
 
 // Sha256
 
-// types
-#define UCHARV uchar
-#define UINTV uint
-#define LONGV long
-
-// functions
-#define CONVERT(t, x) (t)(x)
-#define VLOAD(x, y) (y)[(x)]
-#define VSTORE(x, y, z) (z)[(y)] = (x)
-
 // right rotate macro
-#define RR(x, y) rotate((UINTV)(x), -((UINTV)(y)))
+#define RR(x, y) rotate((uint)(x), -((uint)(y)))
 
 // sha256 macros
-#define CH(x, y, z) bitselect((z),(y),(x))
-#define MAJ(x, y, z) bitselect((x),(y),(z)^(x))
-#define EP0(x) (RR((x),2) ^ RR((x),13) ^ RR((x),22))
-#define EP1(x) (RR((x),6) ^ RR((x),11) ^ RR((x),25))
-#define SIG0(x) (RR((x),7) ^ RR((x),18) ^ ((x) >> 3))
-#define SIG1(x) (RR((x),17) ^ RR((x),19) ^ ((x) >> 10))
+#define CH(x, y, z) bitselect((z), (y), (x))
+#define MAJ(x, y, z) bitselect((x), (y), (z) ^ (x))
+#define EP0(x) (RR((x), 2) ^ RR((x), 13) ^ RR((x), 22))
+#define EP1(x) (RR((x), 6) ^ RR((x), 11) ^ RR((x), 25))
+#define SIG0(x) (RR((x), 7) ^ RR((x), 18) ^ ((x) >> 3))
+#define SIG1(x) (RR((x), 17) ^ RR((x), 19) ^ ((x) >> 10))
 
 // sha256 initial hash values
 #define H0 0x6a09e667
@@ -49,16 +40,16 @@ __constant uint K[64] = {
 };
 
 // perform a single round of sha256 transformation on the given data
-void sha256_transform(UCHARV *data, UINTV *H) {
+void sha256_transform(uchar *data, uint *H) {
     int i;
-    UINTV a, b, c, d, e, f, g, h, t1, t2, m[64];
+    uint a, b, c, d, e, f, g, h, t1, t2, m[64];
 
 #pragma unroll
     for (i = 0; i < 16; i++) {
-        m[i] = (CONVERT(UINTV, data[i * 4]) << 24) |
-               (CONVERT(UINTV, data[i * 4 + 1]) << 16) |
-               (CONVERT(UINTV, data[i * 4 + 2]) << 8) |
-               (CONVERT(UINTV, data[i * 4 + 3]));
+        m[i] = (((uint) data[i * 4]) << 24) |
+               (((uint) data[i * 4 + 1]) << 16) |
+               (((uint) data[i * 4 + 2]) << 8) |
+               (((uint) data[i * 4 + 3]));
     }
 
 #pragma unroll
@@ -97,20 +88,20 @@ void sha256_transform(UCHARV *data, UINTV *H) {
     H[7] += h;
 }
 
-void sha256_finish(UINTV *H, UCHARV *hash) {
+void sha256_finish(uint *H, uchar *hash) {
     int l;
 
 #pragma unroll
     for (int i = 0; i < 4; i++) {
         l = 24 - i * 8;
-        hash[i] = CONVERT(UCHARV, (H[0] >> l) & 0x000000ff);
-        hash[i + 4] = CONVERT(UCHARV, (H[1] >> l) & 0x000000ff);
-        hash[i + 8] = CONVERT(UCHARV, (H[2] >> l) & 0x000000ff);
-        hash[i + 12] = CONVERT(UCHARV, (H[3] >> l) & 0x000000ff);
-        hash[i + 16] = CONVERT(UCHARV, (H[4] >> l) & 0x000000ff);
-        hash[i + 20] = CONVERT(UCHARV, (H[5] >> l) & 0x000000ff);
-        hash[i + 24] = CONVERT(UCHARV, (H[6] >> l) & 0x000000ff);
-        hash[i + 28] = CONVERT(UCHARV, (H[7] >> l) & 0x000000ff);
+        hash[i] = (uchar) ((H[0] >> l) & 0x000000ff);
+        hash[i + 4] = (uchar) ((H[1] >> l) & 0x000000ff);
+        hash[i + 8] = (uchar) ((H[2] >> l) & 0x000000ff);
+        hash[i + 12] = (uchar) ((H[3] >> l) & 0x000000ff);
+        hash[i + 16] = (uchar) ((H[4] >> l) & 0x000000ff);
+        hash[i + 20] = (uchar) ((H[5] >> l) & 0x000000ff);
+        hash[i + 24] = (uchar) ((H[6] >> l) & 0x000000ff);
+        hash[i + 28] = (uchar) ((H[7] >> l) & 0x000000ff);
     }
 }
 
@@ -118,14 +109,14 @@ void sha256_finish(UINTV *H, UCHARV *hash) {
 // uchar data[64] - input bytes - will be modified
 // uint inputLen - input length (in bytes)
 // uchar hash[32] - output bytes - will be modified
-void digest55(UCHARV *data, uint len, UCHARV *hash) {
+void digest55(uchar *data, uint len, uchar *hash) {
     // pad input
     data[len] = 0x80;
     data[62] = (len * 8) >> 8;
     data[63] = len * 8;
 
     // init hash state
-    UINTV H[8] = {H0, H1, H2, H3, H4, H5, H6, H7};
+    uint H[8] = {H0, H1, H2, H3, H4, H5, H6, H7};
 
     // transform
     sha256_transform(data, H);
