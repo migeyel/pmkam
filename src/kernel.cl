@@ -39,6 +39,19 @@ __constant uint K[64] = {
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 };
 
+// sha256 round constants added to a precomputed schedule of
+// the second block from a 64-byte message
+__constant uint K2[64] = {
+    0xc28a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf374,
+    0x649b69c1, 0xf0fe4786, 0x0fe1edc6, 0x240cf254, 0x4fe9346f, 0x6cc984be, 0x61b9411e, 0x16f988fa,
+    0xf2c65152, 0xa88e5a6d, 0xb019fc65, 0xb9d99ec7, 0x9a1231c3, 0xe70eeaa0, 0xfdb1232b, 0xc7353eb0,
+    0x3069bad5, 0xcb976d5f, 0x5a0f118f, 0xdc1eeefd, 0x0a35b689, 0xde0b7a04, 0x58f4ca9d, 0xe15d5b16,
+    0x007f3e86, 0x37088980, 0xa507ea32, 0x6fab9537, 0x17406110, 0x0d8cd6f1, 0xcdaa3b6d, 0xc0bbbe37,
+    0x83613bda, 0xdb48a363, 0x0b02e931, 0x6fd15ca7, 0x521afaca, 0x31338431, 0x6ed41a95, 0x6d437890,
+    0xc39c91f2, 0x9eccabbd, 0xb5c9a0e6, 0x532fb63c, 0xd2c741c6, 0x07237ea3, 0xa4954b68, 0x4c191d76
+};
+
 // perform a single round of sha256 transformation on the given data
 void sha256_transform(uchar *data, uint *H) {
     int i;
@@ -88,6 +101,45 @@ void sha256_transform(uchar *data, uint *H) {
     H[7] += h;
 }
 
+// perform a single round of sha256 transformation on the second block of a
+// 64-byte message
+void sha256_transform2(uint *H) {
+    int i;
+    uint a, b, c, d, e, f, g, h, t1, t2;
+
+    a = H[0];
+    b = H[1];
+    c = H[2];
+    d = H[3];
+    e = H[4];
+    f = H[5];
+    g = H[6];
+    h = H[7];
+
+#pragma unroll
+    for (i = 0; i < 64; i++) {
+        t1 = h + EP1(e) + CH(e, f, g) + K2[i];
+        t2 = EP0(a) + MAJ(a, b, c);
+        h = g;
+        g = f;
+        f = e;
+        e = d + t1;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2;
+    }
+
+    H[0] += a;
+    H[1] += b;
+    H[2] += c;
+    H[3] += d;
+    H[4] += e;
+    H[5] += f;
+    H[6] += g;
+    H[7] += h;
+}
+
 void sha256_finish(uint *H, uchar *hash) {
     int l;
 
@@ -105,42 +157,16 @@ void sha256_finish(uint *H, uchar *hash) {
     }
 }
 
-// sha256 digest of up to 55 bytes of input
+// sha256 digest of exactly 64 bytes of input
 // uchar data[64] - input bytes - will be modified
-// uint inputLen - input length (in bytes)
 // uchar hash[32] - output bytes - will be modified
-void digest55(uchar *data, uint len, uchar *hash) {
-    // pad input
-    data[len] = 0x80;
-    data[62] = (len * 8) >> 8;
-    data[63] = len * 8;
-
+void digest64(const uchar *data, uchar *hash) {
     // init hash state
     uint H[8] = {H0, H1, H2, H3, H4, H5, H6, H7};
 
-    // transform
-    sha256_transform(data, H);
-
-    // finish
-    sha256_finish(H, hash);
-}
-
-// sha256 digest of 56 to 119 bytes of input
-// uchar data[128] - input bytes - will be modified
-// uint inputLen - input length (in bytes)
-// uchar hash[32] - output bytes - will be modified
-void digest119(uchar *data, uint inputLen, uchar *hash) {
-    // pad input
-    data[inputLen] = 0x80;
-    data[126] = (inputLen * 8) >> 8;
-    data[127] = inputLen * 8;
-
-    // init hash state
-    uint H[8] = { H0, H1, H2, H3, H4, H5, H6, H7 };
-
     // transform twice
     sha256_transform(data, H);
-    sha256_transform(data + 64, H);
+    sha256_transform2(H);
 
     // finish
     sha256_finish(H, hash);
@@ -158,8 +184,7 @@ __constant uchar hex_lookup[16] = "0123456789abcdef";
 
 // Converts a sha256 hash to hexadecimal
 // uchar hash[32] - input hash
-// uchar hex[128] - output hex - will be modified
-// We write to 128 bytes because that's what digest119 expects
+// uchar hex[64] - output hex - will be modified
 inline void hash_to_hex(const uchar *hash, uchar *hex) {
 #pragma unroll
     for (int i = 0; i < 32; i++) {
@@ -167,12 +192,6 @@ inline void hash_to_hex(const uchar *hash, uchar *hex) {
 
         hex[2 * i] = hex_lookup[h / 16];
         hex[2 * i + 1] = hex_lookup[h % 16];
-    }
-
-    // digest119 (from sha256 spec) expects a zero padding
-#pragma unroll
-    for (uint i = 64; i < 128; i++) {
-        hex[i] = 0;
     }
 }
 
@@ -228,7 +247,7 @@ typedef struct HASH_CHAIN_T {
 //   protein buffer.
 // - Writes the first 8 bytes from last_hash to the chain buffer.
 inline void shift_chain(HASH_CHAIN_T *chain) {
-    uchar hash_hex[128] = "";
+    uchar hash_hex[64] = "";
 
     //hash_to_hex(chain->last_hash, hash_hex);
 #pragma unroll
@@ -238,7 +257,7 @@ inline void shift_chain(HASH_CHAIN_T *chain) {
         h &= 0xf;
         hash_hex[2 * i + 1] = h + (h < 10 ? '0' : 'a' - 10);
     }
-    digest119(hash_hex, 64, chain->last_hash);
+    digest64(hash_hex, chain->last_hash);
 
     chain->protein[chain->protein_start] = make_address_byte_s(chain->chain[chain->chain_start]);
     chain->protein_start = (chain->protein_start + 1) % 18;
@@ -325,23 +344,19 @@ __kernel void mine(
     uint gid_seed = gid;
     ulong nonce_seed = nonce;
     uchar seed[64] = "";
-    uint seedlen = 0;
     for (int i = 0; i < 10; i++) {
-        seed[seedlen] = entropy[i];
-        seedlen++;
+        seed[i] = entropy[i];
     }
     for (int i = 0; i < 4; i++) {
-        seed[seedlen] = gid_seed % 256;
+        seed[i + 10] = gid_seed % 256;
         gid_seed /= 256;
-        seedlen++;
     }
     for (int i = 0; i < 8; i++) {
-        seed[seedlen] = nonce_seed % 256;
+        seed[i + 14] = nonce_seed % 256;
         nonce_seed /= 256;
-        seedlen++;
     }
     uchar seed_hash[32] = {};
-    digest55(seed, seedlen, seed_hash);
+    digest64(seed, seed_hash);
 
     // Make chain and protein
     HASH_CHAIN_T chain;
@@ -379,11 +394,11 @@ __kernel void mine(
     // This *may* be faster to do on CPU due to higher clock frequencies
     if (solution_found) {
         uchar hash_byte[32];
-        uchar hash_hex[128];
+        uchar hash_hex[64];
         hash_to_hex(seed_hash, hash_hex);
 
         for (int i = 0; i < solution_found_at; i++) {
-            digest119(hash_hex, 64, hash_byte);
+            digest64(hash_hex, hash_byte);
             hash_to_hex(hash_byte, hash_hex);
         }
 
