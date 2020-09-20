@@ -416,13 +416,6 @@ __kernel void mine(
             hash_to_hex(hash_byte, hash_hex);
         }
 
-        for (int i = 0; i < 16; i++) {
-            for (int j = 0; j < 4; j++) {
-                printf("%c", UINT_BYTE_BE(hash_hex[i], j));
-            }
-        }
-        printf("\n");
-
         *solved = 1;
         for (int i = 0; i < 32; i += 4) {
             pkey[i + 0] = UINT_BYTE_BE(hash_byte[i / 4], 0);
