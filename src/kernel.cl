@@ -182,26 +182,26 @@ inline void hash_to_hex(const UINT hash[8], UINT hex[16]) {
         h = UINT_BYTE_BE(hash[i / 2], 0);
         h1 = h % 16;
         h2 = h / 16;
-        UINT_BYTE_BE(hex[i], 1) = h1 < 10 ? h1 + '0' : h1 + 'a' - 10;
-        UINT_BYTE_BE(hex[i], 0) = h2 < 10 ? h2 + '0' : h2 + 'a' - 10;
+        UINT_BYTE_BE(hex[i], 1) = h1 + (h1 < 10 ? '0' : 'a' - 10);
+        UINT_BYTE_BE(hex[i], 0) = h2 + (h2 < 10 ? '0' : 'a' - 10);
 
         h = UINT_BYTE_BE(hash[i / 2], 1);
         h1 = h % 16;
         h2 = h / 16;
-        UINT_BYTE_BE(hex[i], 3) = h1 < 10 ? h1 + '0' : h1 + 'a' - 10;
-        UINT_BYTE_BE(hex[i], 2) = h2 < 10 ? h2 + '0' : h2 + 'a' - 10;
+        UINT_BYTE_BE(hex[i], 3) = h1 + (h1 < 10 ? '0' : 'a' - 10);
+        UINT_BYTE_BE(hex[i], 2) = h2 + (h2 < 10 ? '0' : 'a' - 10);
 
         h = UINT_BYTE_BE(hash[i / 2], 2);
         h1 = h % 16;
         h2 = h / 16;
-        UINT_BYTE_BE(hex[i + 1], 1) = h1 < 10 ? h1 + '0' : h1 + 'a' - 10;
-        UINT_BYTE_BE(hex[i + 1], 0) = h2 < 10 ? h2 + '0' : h2 + 'a' - 10;
+        UINT_BYTE_BE(hex[i + 1], 1) = h1 + (h1 < 10 ? '0' : 'a' - 10);
+        UINT_BYTE_BE(hex[i + 1], 0) = h2 + (h2 < 10 ? '0' : 'a' - 10);
 
         h = UINT_BYTE_BE(hash[i / 2], 3);
         h1 = h % 16;
         h2 = h / 16;
-        UINT_BYTE_BE(hex[i + 1], 3) = h1 < 10 ? h1 + '0' : h1 + 'a' - 10;
-        UINT_BYTE_BE(hex[i + 1], 2) = h2 < 10 ? h2 + '0' : h2 + 'a' - 10;
+        UINT_BYTE_BE(hex[i + 1], 3) = h1 + (h1 < 10 ? '0' : 'a' - 10);
+        UINT_BYTE_BE(hex[i + 1], 2) = h2 + (h2 < 10 ? '0' : 'a' - 10);
     }
 }
 
@@ -280,13 +280,14 @@ inline int iter_prefix_search(const uchar addr_char, uint* index, __global const
     uint trie_data;
 
     trie_data = trie[*index + addr_char];
-    if (trie_data == 0) {
-        return 0;
-    } else if (trie_data == 1) {
-        return 2;
-    } else {
-        *index += (trie_data - 1) * 36;
-        return 1;
+    switch (trie_data) {
+        case 0:
+            return 0;
+        case 1:
+            return 2;
+        default:
+            *index += (trie_data - 1) * 36;
+            return 1;
     }
 }
 
@@ -308,13 +309,15 @@ inline bool check_address(const HASH_CHAIN_T *chain,__global const uint *trie) {
             used_protein[link] = true;
 
             int found = iter_prefix_search(v2[i], &trie_index, trie);
-            if (found == 0) {
-                return false;
-            } else if (found == 2) {
-                return true;
+            switch (found) {
+                case 0:
+                    return false;
+                case 1:
+                    i++;
+                    break;
+                case 2:
+                    return true;
             }
-
-            i++;
         } else {
             chain_index = (chain_index + 8) % CHAIN_SIZE;
             iter++;
