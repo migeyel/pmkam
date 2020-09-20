@@ -64,15 +64,17 @@ __constant uint K2[64] = {
 };
 
 // perform a single round of sha256 transformation on the given data
-inline void sha256_transform(const UINT data[16], UINT H[8]) {
+inline void sha256_transform(UINT m[64], UINT H[8]) {
     int i;
-    uint a, b, c, d, e, f, g, h, t1, t2, m[64];
+    uint a, b, c, d, e, f, g, h, t1, t2;
 
 #pragma unroll
-    for (i = 0; i < 16; i++) m[i] = data[i].i;
-
-#pragma unroll
-    for (i = 16; i < 64; i++) m[i] = SIG1(m[i - 2]) + m[i - 7] + SIG0(m[i - 15]) + m[i - 16];
+    for (i = 16; i < 64; i++) {
+        m[i].i = SIG1(m[i - 2].i)
+            + m[i - 7].i
+            + SIG0(m[i - 15].i)
+            + m[i - 16].i;
+    }
 
     a = H[0].i;
     b = H[1].i;
@@ -85,7 +87,7 @@ inline void sha256_transform(const UINT data[16], UINT H[8]) {
 
 #pragma unroll
     for (i = 0; i < 64; i++) {
-        t1 = h + EP1(e) + CH(e, f, g) + K[i] + m[i];
+        t1 = h + EP1(e) + CH(e, f, g) + K[i] + m[i].i;
         t2 = EP0(a) + MAJ(a, b, c);
         h = g;
         g = f;
@@ -147,9 +149,10 @@ inline void sha256_transform2(UINT H[8]) {
 }
 
 // sha256 digest of exactly 64 bytes of input
-// uchar data[64] - input bytes - will be modified
-// uchar hash[32] - output bytes - will be modified
-inline void digest64(const UINT data[16], UINT hash[8]) {
+// UINT data[64] - input bytes - will be modified
+// UINT hash[8] - output bytes - will be modified
+// TODO: Check all comments before release
+inline void digest64(UINT data[64], UINT hash[8]) {
     // init hash state
     hash[0].i = H0;
     hash[1].i = H1;
@@ -174,7 +177,7 @@ inline void digest64(const UINT data[16], UINT hash[8]) {
                           // A max chain iter of n means a failure probability of at most (7/9)^n per address checked.
 
 // Converts a sha256 hash to hexadecimal
-inline void hash_to_hex(const UINT hash[8], UINT hex[16]) {    
+inline void hash_to_hex(const UINT hash[8], UINT hex[64]) {    
 #pragma unroll
     for (int i = 0; i < 16; i += 2) {
         uchar h, h1, h2;
@@ -257,7 +260,7 @@ typedef struct HASH_CHAIN_T {
 //   protein buffer.
 // - Writes the first 8 bytes from last_hash to the chain buffer.
 inline void shift_chain(HASH_CHAIN_T *chain) {
-    UINT hash_hex[16];
+    UINT hash_hex[64];
     hash_to_hex(chain->last_hash, hash_hex);
     digest64(hash_hex, chain->last_hash);
 
@@ -352,7 +355,7 @@ __kernel void mine(
     // Generate seed from hashing some arguments
     uint gid_seed = gid;
     ulong nonce_seed = nonce;
-    UINT seed[16] = {};
+    UINT seed[64] = {};
     
     for (int i = 0; i < 10; i++) {
         UINT_BYTE_BE(seed[i / 4], i % 4) = entropy[i];
@@ -400,7 +403,7 @@ __kernel void mine(
     // This *may* be faster to do on CPU due to higher clock frequencies
     if (solution_found) {
         UINT hash_byte[8];
-        UINT hash_hex[16];
+        UINT hash_hex[64];
         hash_to_hex(seed_hash, hash_hex);
 
         for (int i = 0; i < solution_found_at; i++) {
