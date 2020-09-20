@@ -6,6 +6,17 @@
 
 // Sha256
 
+typedef union UINT {
+    uint i;
+    uchar c[4];
+} UINT;
+
+#ifdef __ENDIAN_LITTLE__
+    #define UINT_BYTE_BE(U, I) ((U).c[3 - (I)])
+#else
+    #define UINT_BYTE_BE(U, I) ((U).c[(I)])
+#endif
+
 // right rotate macro
 #define RR(x, y) rotate((uint)(x), -((uint)(y)))
 
@@ -53,29 +64,24 @@ __constant uint K2[64] = {
 };
 
 // perform a single round of sha256 transformation on the given data
-void sha256_transform(uchar *data, uint *H) {
+void sha256_transform(const UINT data[16], UINT H[8]) {
     int i;
     uint a, b, c, d, e, f, g, h, t1, t2, m[64];
 
 #pragma unroll
-    for (i = 0; i < 16; i++) {
-        m[i] = (((uint) data[i * 4]) << 24) |
-               (((uint) data[i * 4 + 1]) << 16) |
-               (((uint) data[i * 4 + 2]) << 8) |
-               (((uint) data[i * 4 + 3]));
-    }
+    for (i = 0; i < 16; i++) m[i] = data[i].i;
 
 #pragma unroll
     for (i = 16; i < 64; i++) m[i] = SIG1(m[i - 2]) + m[i - 7] + SIG0(m[i - 15]) + m[i - 16];
 
-    a = H[0];
-    b = H[1];
-    c = H[2];
-    d = H[3];
-    e = H[4];
-    f = H[5];
-    g = H[6];
-    h = H[7];
+    a = H[0].i;
+    b = H[1].i;
+    c = H[2].i;
+    d = H[3].i;
+    e = H[4].i;
+    f = H[5].i;
+    g = H[6].i;
+    h = H[7].i;
 
 #pragma unroll
     for (i = 0; i < 64; i++) {
@@ -91,30 +97,30 @@ void sha256_transform(uchar *data, uint *H) {
         a = t1 + t2;
     }
 
-    H[0] += a;
-    H[1] += b;
-    H[2] += c;
-    H[3] += d;
-    H[4] += e;
-    H[5] += f;
-    H[6] += g;
-    H[7] += h;
+    H[0].i += a;
+    H[1].i += b;
+    H[2].i += c;
+    H[3].i += d;
+    H[4].i += e;
+    H[5].i += f;
+    H[6].i += g;
+    H[7].i += h;
 }
 
 // perform a single round of sha256 transformation on the second block of a
 // 64-byte message
-void sha256_transform2(uint *H) {
+void sha256_transform2(UINT H[8]) {
     int i;
     uint a, b, c, d, e, f, g, h, t1, t2;
 
-    a = H[0];
-    b = H[1];
-    c = H[2];
-    d = H[3];
-    e = H[4];
-    f = H[5];
-    g = H[6];
-    h = H[7];
+    a = H[0].i;
+    b = H[1].i;
+    c = H[2].i;
+    d = H[3].i;
+    e = H[4].i;
+    f = H[5].i;
+    g = H[6].i;
+    h = H[7].i;
 
 #pragma unroll
     for (i = 0; i < 64; i++) {
@@ -130,46 +136,33 @@ void sha256_transform2(uint *H) {
         a = t1 + t2;
     }
 
-    H[0] += a;
-    H[1] += b;
-    H[2] += c;
-    H[3] += d;
-    H[4] += e;
-    H[5] += f;
-    H[6] += g;
-    H[7] += h;
-}
-
-void sha256_finish(uint *H, uchar *hash) {
-    int l;
-
-#pragma unroll
-    for (int i = 0; i < 4; i++) {
-        l = 24 - i * 8;
-        hash[i] = (uchar) ((H[0] >> l) & 0x000000ff);
-        hash[i + 4] = (uchar) ((H[1] >> l) & 0x000000ff);
-        hash[i + 8] = (uchar) ((H[2] >> l) & 0x000000ff);
-        hash[i + 12] = (uchar) ((H[3] >> l) & 0x000000ff);
-        hash[i + 16] = (uchar) ((H[4] >> l) & 0x000000ff);
-        hash[i + 20] = (uchar) ((H[5] >> l) & 0x000000ff);
-        hash[i + 24] = (uchar) ((H[6] >> l) & 0x000000ff);
-        hash[i + 28] = (uchar) ((H[7] >> l) & 0x000000ff);
-    }
+    H[0].i += a;
+    H[1].i += b;
+    H[2].i += c;
+    H[3].i += d;
+    H[4].i += e;
+    H[5].i += f;
+    H[6].i += g;
+    H[7].i += h;
 }
 
 // sha256 digest of exactly 64 bytes of input
 // uchar data[64] - input bytes - will be modified
 // uchar hash[32] - output bytes - will be modified
-void digest64(const uchar *data, uchar *hash) {
+void digest64(const UINT data[16], UINT hash[8]) {
     // init hash state
-    uint H[8] = {H0, H1, H2, H3, H4, H5, H6, H7};
+    hash[0].i = H0;
+    hash[1].i = H1;
+    hash[2].i = H2;
+    hash[3].i = H3;
+    hash[4].i = H4;
+    hash[5].i = H5;
+    hash[6].i = H6;
+    hash[7].i = H7;
 
     // transform twice
-    sha256_transform(data, H);
-    sha256_transform2(H);
-
-    // finish
-    sha256_finish(H, hash);
+    sha256_transform(data, hash);
+    sha256_transform2(hash);
 }
 
 // Address miner
@@ -180,18 +173,35 @@ void digest64(const uchar *data, uchar *hash) {
                           // Must not be greater than CHAIN_SIZE / 8. (otherwise false positives will happen without any other benefit).
                           // A max chain iter of n means a failure probability of at most (7/9)^n per address checked.
 
-__constant uchar hex_lookup[16] = "0123456789abcdef";
-
 // Converts a sha256 hash to hexadecimal
-// uchar hash[32] - input hash
-// uchar hex[64] - output hex - will be modified
-inline void hash_to_hex(const uchar *hash, uchar *hex) {
+inline void hash_to_hex(const UINT hash[8], UINT hex[16]) {    
 #pragma unroll
-    for (int i = 0; i < 32; i++) {
-        uchar h = hash[i];
+    for (int i = 0; i < 16; i += 2) {
+        uchar h, h1, h2;
 
-        hex[2 * i] = hex_lookup[h / 16];
-        hex[2 * i + 1] = hex_lookup[h % 16];
+        h = UINT_BYTE_BE(hash[i / 2], 0);
+        h1 = h % 16;
+        h2 = h / 16;
+        UINT_BYTE_BE(hex[i], 1) = h1 < 10 ? h1 + '0' : h1 + 'a' - 10;
+        UINT_BYTE_BE(hex[i], 0) = h2 < 10 ? h2 + '0' : h2 + 'a' - 10;
+
+        h = UINT_BYTE_BE(hash[i / 2], 1);
+        h1 = h % 16;
+        h2 = h / 16;
+        UINT_BYTE_BE(hex[i], 3) = h1 < 10 ? h1 + '0' : h1 + 'a' - 10;
+        UINT_BYTE_BE(hex[i], 2) = h2 < 10 ? h2 + '0' : h2 + 'a' - 10;
+
+        h = UINT_BYTE_BE(hash[i / 2], 2);
+        h1 = h % 16;
+        h2 = h / 16;
+        UINT_BYTE_BE(hex[i + 1], 1) = h1 < 10 ? h1 + '0' : h1 + 'a' - 10;
+        UINT_BYTE_BE(hex[i + 1], 0) = h2 < 10 ? h2 + '0' : h2 + 'a' - 10;
+
+        h = UINT_BYTE_BE(hash[i / 2], 3);
+        h1 = h % 16;
+        h2 = h / 16;
+        UINT_BYTE_BE(hex[i + 1], 3) = h1 < 10 ? h1 + '0' : h1 + 'a' - 10;
+        UINT_BYTE_BE(hex[i + 1], 2) = h2 < 10 ? h2 + '0' : h2 + 'a' - 10;
     }
 }
 
@@ -234,7 +244,7 @@ inline uchar make_address_byte_s(uchar byte) {
 // Finally, Kristwallet only needs the first 8 bytes from every hash, so
 // we only store that (as well as the seed and last hash, so we can shift).
 typedef struct HASH_CHAIN_T {
-    uchar last_hash[32];
+    UINT last_hash[8];
     uint chain_start;
     uchar chain[CHAIN_SIZE];
     uchar protein[18];
@@ -247,24 +257,23 @@ typedef struct HASH_CHAIN_T {
 //   protein buffer.
 // - Writes the first 8 bytes from last_hash to the chain buffer.
 inline void shift_chain(HASH_CHAIN_T *chain) {
-    uchar hash_hex[64] = "";
-
-    //hash_to_hex(chain->last_hash, hash_hex);
-#pragma unroll
-    for (int i = 0; i < 32; i++) {
-        uchar h = chain->last_hash[i];
-        hash_hex[2 * i] = (h >> 4) + (h < 160 ? '0' : 'a' - 10);
-        h &= 0xf;
-        hash_hex[2 * i + 1] = h + (h < 10 ? '0' : 'a' - 10);
-    }
+    UINT hash_hex[16];
+    hash_to_hex(chain->last_hash, hash_hex);
     digest64(hash_hex, chain->last_hash);
 
-    chain->protein[chain->protein_start] = make_address_byte_s(chain->chain[chain->chain_start]);
+    chain->protein[chain->protein_start] = make_address_byte_s(
+        chain->chain[chain->chain_start]
+    );
     chain->protein_start = (chain->protein_start + 1) % 18;
 
-    for (int i = 0; i < 8; i++) {
-        chain->chain[chain->chain_start + i] = chain->last_hash[i];
-    }
+    chain->chain[chain->chain_start + 0] = UINT_BYTE_BE(chain->last_hash[0], 0);
+    chain->chain[chain->chain_start + 1] = UINT_BYTE_BE(chain->last_hash[0], 1);
+    chain->chain[chain->chain_start + 2] = UINT_BYTE_BE(chain->last_hash[0], 2);
+    chain->chain[chain->chain_start + 3] = UINT_BYTE_BE(chain->last_hash[0], 3);
+    chain->chain[chain->chain_start + 4] = UINT_BYTE_BE(chain->last_hash[1], 0);
+    chain->chain[chain->chain_start + 5] = UINT_BYTE_BE(chain->last_hash[1], 1);
+    chain->chain[chain->chain_start + 6] = UINT_BYTE_BE(chain->last_hash[1], 2);
+    chain->chain[chain->chain_start + 7] = UINT_BYTE_BE(chain->last_hash[1], 3);
     chain->chain_start = (chain->chain_start + 8) % CHAIN_SIZE;
 }
 
@@ -343,19 +352,23 @@ __kernel void mine(
     // Generate seed from hashing some arguments
     uint gid_seed = gid;
     ulong nonce_seed = nonce;
-    uchar seed[64] = "";
-    for (int i = 0; i < 10; i++) {
-        seed[i] = entropy[i];
-    }
-    for (int i = 0; i < 4; i++) {
-        seed[i + 10] = gid_seed % 256;
-        gid_seed /= 256;
-    }
-    for (int i = 0; i < 8; i++) {
-        seed[i + 14] = nonce_seed % 256;
-        nonce_seed /= 256;
-    }
-    uchar seed_hash[32] = {};
+    UINT seed[16] = {};
+    
+    UINT_BYTE_BE(seed[0], 0) = entropy[0];
+    UINT_BYTE_BE(seed[0], 1) = entropy[1];
+    UINT_BYTE_BE(seed[0], 2) = entropy[2];
+    UINT_BYTE_BE(seed[0], 3) = entropy[3];
+    UINT_BYTE_BE(seed[1], 0) = entropy[4];
+    UINT_BYTE_BE(seed[1], 1) = entropy[5];
+    UINT_BYTE_BE(seed[1], 2) = entropy[6];
+    UINT_BYTE_BE(seed[1], 3) = entropy[7];
+    UINT_BYTE_BE(seed[2], 0) = entropy[8];
+    UINT_BYTE_BE(seed[2], 1) = entropy[9];
+    seed[3].i = gid_seed;
+    seed[4].i = nonce_seed % UINT_MAX;
+    seed[5].i = nonce_seed / UINT_MAX;
+
+    UINT seed_hash[8];
     digest64(seed, seed_hash);
 
     // Make chain and protein
@@ -364,7 +377,7 @@ __kernel void mine(
     chain.protein_start = 0;
 
     // Put seed into the last chain hash
-    for (int i = 0; i < 32; i++) {
+    for (int i = 0; i < 8; i++) {
         chain.last_hash[i] = seed_hash[i];
     }
 
@@ -393,8 +406,8 @@ __kernel void mine(
     // Re-do hashes to find proper pkey
     // This *may* be faster to do on CPU due to higher clock frequencies
     if (solution_found) {
-        uchar hash_byte[32];
-        uchar hash_hex[64];
+        UINT hash_byte[8];
+        UINT hash_hex[16];
         hash_to_hex(seed_hash, hash_hex);
 
         for (int i = 0; i < solution_found_at; i++) {
@@ -402,9 +415,19 @@ __kernel void mine(
             hash_to_hex(hash_byte, hash_hex);
         }
 
-        for (int i = 0; i < 32; i++) {
-            *solved = 1;
-            pkey[i] = hash_byte[i];
+        for (int i = 0; i < 16; i++) {
+            for (int j = 0; j < 4; j++) {
+                printf("%c", UINT_BYTE_BE(hash_hex[i], j));
+            }
+        }
+        printf("\n");
+
+        *solved = 1;
+        for (int i = 0; i < 32; i += 4) {
+            pkey[i + 0] = UINT_BYTE_BE(hash_byte[i / 4], 0);
+            pkey[i + 1] = UINT_BYTE_BE(hash_byte[i / 4], 1);
+            pkey[i + 2] = UINT_BYTE_BE(hash_byte[i / 4], 2);
+            pkey[i + 3] = UINT_BYTE_BE(hash_byte[i / 4], 3);
         }
     }
 }
