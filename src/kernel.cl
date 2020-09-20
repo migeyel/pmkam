@@ -266,14 +266,10 @@ inline void shift_chain(HASH_CHAIN_T *chain) {
     );
     chain->protein_start = (chain->protein_start + 1) % 18;
 
-    chain->chain[chain->chain_start + 0] = UINT_BYTE_BE(chain->last_hash[0], 0);
-    chain->chain[chain->chain_start + 1] = UINT_BYTE_BE(chain->last_hash[0], 1);
-    chain->chain[chain->chain_start + 2] = UINT_BYTE_BE(chain->last_hash[0], 2);
-    chain->chain[chain->chain_start + 3] = UINT_BYTE_BE(chain->last_hash[0], 3);
-    chain->chain[chain->chain_start + 4] = UINT_BYTE_BE(chain->last_hash[1], 0);
-    chain->chain[chain->chain_start + 5] = UINT_BYTE_BE(chain->last_hash[1], 1);
-    chain->chain[chain->chain_start + 6] = UINT_BYTE_BE(chain->last_hash[1], 2);
-    chain->chain[chain->chain_start + 7] = UINT_BYTE_BE(chain->last_hash[1], 3);
+#pragma unroll
+    for (int i = 0; i < 8; i++) {
+        chain->chain[chain->chain_start + i] = UINT_BYTE_BE(chain->last_hash[i / 4], i % 4);
+    }
     chain->chain_start = (chain->chain_start + 8) % CHAIN_SIZE;
 }
 
@@ -355,16 +351,9 @@ __kernel void mine(
     ulong nonce_seed = nonce;
     UINT seed[16] = {};
     
-    UINT_BYTE_BE(seed[0], 0) = entropy[0];
-    UINT_BYTE_BE(seed[0], 1) = entropy[1];
-    UINT_BYTE_BE(seed[0], 2) = entropy[2];
-    UINT_BYTE_BE(seed[0], 3) = entropy[3];
-    UINT_BYTE_BE(seed[1], 0) = entropy[4];
-    UINT_BYTE_BE(seed[1], 1) = entropy[5];
-    UINT_BYTE_BE(seed[1], 2) = entropy[6];
-    UINT_BYTE_BE(seed[1], 3) = entropy[7];
-    UINT_BYTE_BE(seed[2], 0) = entropy[8];
-    UINT_BYTE_BE(seed[2], 1) = entropy[9];
+    for (int i = 0; i < 10; i++) {
+        UINT_BYTE_BE(seed[i / 4], i % 4) = entropy[i];
+    }
     seed[3].i = gid_seed;
     seed[4].i = nonce_seed % UINT_MAX;
     seed[5].i = nonce_seed / UINT_MAX;
@@ -417,11 +406,8 @@ __kernel void mine(
         }
 
         *solved = 1;
-        for (int i = 0; i < 32; i += 4) {
-            pkey[i + 0] = UINT_BYTE_BE(hash_byte[i / 4], 0);
-            pkey[i + 1] = UINT_BYTE_BE(hash_byte[i / 4], 1);
-            pkey[i + 2] = UINT_BYTE_BE(hash_byte[i / 4], 2);
-            pkey[i + 3] = UINT_BYTE_BE(hash_byte[i / 4], 3);
+        for (int i = 0; i < 32; i++) {
+            pkey[i] = UINT_BYTE_BE(hash_byte[i / 4], i % 4);
         }
     }
 }
