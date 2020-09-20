@@ -64,7 +64,7 @@ __constant uint K2[64] = {
 };
 
 // perform a single round of sha256 transformation on the given data
-void sha256_transform(const UINT data[16], UINT H[8]) {
+inline void sha256_transform(const UINT data[16], UINT H[8]) {
     int i;
     uint a, b, c, d, e, f, g, h, t1, t2, m[64];
 
@@ -109,7 +109,7 @@ void sha256_transform(const UINT data[16], UINT H[8]) {
 
 // perform a single round of sha256 transformation on the second block of a
 // 64-byte message
-void sha256_transform2(UINT H[8]) {
+inline void sha256_transform2(UINT H[8]) {
     int i;
     uint a, b, c, d, e, f, g, h, t1, t2;
 
@@ -149,7 +149,7 @@ void sha256_transform2(UINT H[8]) {
 // sha256 digest of exactly 64 bytes of input
 // uchar data[64] - input bytes - will be modified
 // uchar hash[32] - output bytes - will be modified
-void digest64(const UINT data[16], UINT hash[8]) {
+inline void digest64(const UINT data[16], UINT hash[8]) {
     // init hash state
     hash[0].i = H0;
     hash[1].i = H1;
@@ -330,6 +330,7 @@ inline bool check_address(const HASH_CHAIN_T *chain,__global const uint *trie) {
     }
 
     // Put in last char in the address
+#pragma unroll
     for (i = 0; i < 9; i++) {
         if (!used_protein[i]) {
             v2[8] = chain->protein[(chain->protein_start + 2 * i) % 18];
