@@ -307,15 +307,18 @@ impl Miner {
                 (self.work_size as f64 * dt_vs_desired_coefficient) / self.local_size as f64
             ) as usize * self.local_size;
             let new_work_size = max(new_work_size, self.local_size);
-            if new_work_size != self.work_size {
+            let old_work_size = self.work_size;
+            if new_work_size != old_work_size {
                 self.kernel.set_default_global_work_size(SpatialDims::One(new_work_size));
                 self.work_size = new_work_size;
             }
 
+            // Increment nonce
+            self.nonce += 1;
+            self.kernel.set_arg("nonce", self.nonce)
+                .expect("Set nonce argument");
+
             // Send information to the main thread
-            let hash_rate = THREAD_ITER as f64
-                * self.work_size as f64
-                / dt.as_secs_f64();
             if vec_solved[0] == 1 {
                 let mut vec_pkey = vec![0; 32];
                 self.solved_buffer.write(&vec_pkey[..1]).enq()
@@ -323,17 +326,22 @@ impl Miner {
                 self.pkey_buffer.read(&mut vec_pkey).enq()
                     .expect("Read pkey buffer");
 
+                let dt = Instant::now() - t0;
+                let hash_rate = THREAD_ITER as f64
+                    * old_work_size as f64
+                    / dt.as_secs_f64();
+
                 self.tx.send((self.id, Some(vec_pkey), hash_rate))
                     .expect("Send message to main thread");
             } else {
+                let dt = Instant::now() - t0;
+                let hash_rate = THREAD_ITER as f64
+                    * old_work_size as f64
+                    / dt.as_secs_f64();
+
                 self.tx.send((self.id, None, hash_rate))
                     .expect("Send message to main thread");
             }
-
-            // Increment nonce
-            self.nonce += 1;
-            self.kernel.set_arg("nonce", self.nonce)
-                .expect("Set nonce argument");
         }
     }
 }
