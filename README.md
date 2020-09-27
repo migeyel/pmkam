@@ -3,7 +3,7 @@ A miner for finding [Krist](https://krist.ceriat.net) addresses with a desired p
 
 ## Usage
 Similar to [KristVanity](https://github.com/Lignum/KristVanity). Put the prefixes you want to look for in a file named `terms.txt`
-in the same folder as the program. The results will be written on the screen and to a file named `results.txt`.
+in the same folder as the program. The results will be written on the screen and to a file named `solutions.txt`.
 
 Running `pmkam mine` will start mining on all devices it can find. You can run `pmkam help` for info
 on how to enable specific devices and how to list them.
