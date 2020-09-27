@@ -565,8 +565,8 @@ fn mine(program_name: &str, arguments: Vec<String>) {
 fn print_usage(program_name: &str) {
     println!("pmkam - PG's Messy (OpenCL) Krist Address Miner v{}", env!("CARGO_PKG_VERSION"));
     println!("This is a prefix-only miner with multiple term support. Put the terms you want to \
-              look for in a \"terms.txt\" file. Results are written to the \"solutions.txt\" file \
-              as well as presented on the screen.");
+              look for in a \"{}\" file. Results are written to the \"{}\" file \
+              as well as presented on the screen.", TERMS_PATH, SOLUTIONS_PATH);
     println!("Some parts of this program are licensed under different terms and are attributed \
               to their respective authors. This includes all dependencies from crates.io and part \
               of the kernel.cl file.");
