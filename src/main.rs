@@ -48,15 +48,12 @@ fn make_v2_address(pkey: &[u8]) -> String {
     let mut i = 0;
     while i < 9 {
         let link = stick[i] % 9;
-        match protein[link as usize] {
-            Some(val) => {
-                v2.push(ADDRESS_LOOKUP[val as usize]);
-                protein[link as usize] = None;
-                i += 1;
-            }
-            None => {
-                stick = digest(&stick);
-            }
+        if let Some(val) = protein[link as usize] {
+            v2.push(ADDRESS_LOOKUP[val as usize]);
+            protein[link as usize] = None;
+            i += 1;
+        } else {
+            stick = digest(&stick);
         }
     }
 
