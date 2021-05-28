@@ -28,15 +28,10 @@ const AVERAGE_HASHRATE_ITER_COUNT: usize = 10_usize;
 ///
 /// In pseudocode it's the same as `SHA256(hex(data))`.
 fn digest(data: &[u8]) -> [u8; 32] {
-    let mut hex = String::new();
-    for i in data {hex += &format!("{:02x}", i)}
-    let hash = Sha256::digest(hex.as_bytes());
-    let hash = hash.as_slice();
-    let mut out = [0_u8; 32];
-    for i in 0..32 {
-        out[i] = hash[i];
-    }
-    out
+    let hex = data.iter().fold(String::new(), |hex, byte| {
+        hex + &format!("{:02x}", byte)
+    });
+    *Sha256::digest(hex.as_bytes()).as_ref()
 }
 
 /// Makes a Krist v2 address from a private key.
