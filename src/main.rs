@@ -4,8 +4,7 @@ use std::path::Path;
 use ocl::{Buffer, MemFlags, Platform, Device, ProQue, Kernel, SpatialDims};
 use std::time::{Instant, Duration};
 use sha2::{Sha256, Digest};
-use std::cmp;
-use std::cmp::{min, max};
+use std::cmp::max;
 use ocl::enums::{DeviceInfo};
 use ocl::core::{DeviceInfoResult};
 use std::sync::mpsc;
@@ -14,9 +13,11 @@ use std::thread;
 use std::env::args;
 use std::ffi::OsStr;
 
+mod trie;
+use trie::TrieNode;
+
 const THREAD_ITER: usize = 4096;
 const ADDRESS_LOOKUP: [char; 256] = ['0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1', '1', '1', '1', '2', '2', '2', '2', '2', '2', '2', '3', '3', '3', '3', '3', '3', '3', '4', '4', '4', '4', '4', '4', '4', '5', '5', '5', '5', '5', '5', '5', '6', '6', '6', '6', '6', '6', '6', '7', '7', '7', '7', '7', '7', '7', '8', '8', '8', '8', '8', '8', '8', '9', '9', '9', '9', '9', '9', '9', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'b', 'b', 'b', 'b', 'b', 'b', 'b', 'c', 'c', 'c', 'c', 'c', 'c', 'c', 'd', 'd', 'd', 'd', 'd', 'd', 'd', 'e', 'e', 'e', 'e', 'e', 'e', 'e', 'f', 'f', 'f', 'f', 'f', 'f', 'f', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'h', 'h', 'h', 'h', 'h', 'h', 'h', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'k', 'k', 'k', 'k', 'k', 'k', 'k', 'l', 'l', 'l', 'l', 'l', 'l', 'l', 'm', 'm', 'm', 'm', 'm', 'm', 'm', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'o', 'o', 'o', 'o', 'o', 'o', 'o', 'p', 'p', 'p', 'p', 'p', 'p', 'p', 'q', 'q', 'q', 'q', 'q', 'q', 'q', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 's', 's', 's', 's', 's', 's', 's', 't', 't', 't', 't', 't', 't', 't', 'u', 'u', 'u', 'u', 'u', 'u', 'u', 'v', 'v', 'v', 'v', 'v', 'v', 'v', 'w', 'w', 'w', 'w', 'w', 'w', 'w', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'y', 'y', 'y', 'y', 'y', 'y', 'y', 'z', 'z', 'z', 'z', 'z', 'z', 'z', 'e', 'e', 'e', 'e'];
-const TRIE_REV_ADDRESS_LOOKUP: [u8; 128] = [0, 0, 0, 0, 0, 0, 0, 0, /*8*/0, 0, 0, 0, 0, 0, 0, 0, /*16*/0, 0, 0, 0, 0, 0, 0, 0, /*24*/0, 0, 0, 0, 0, 0, 0, 0, /*32*/0, 0, 0, 0, 0, 0, 0, 0, /*40*/0, 0, 0, 0, 0, 0, 0, 0, /*48 ASCII 0*/0, 1, 2, 3, 4, 5, 6, 7, /*56*/8, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /*a*/10, 11, 12, 13, 14, 15, 16, 17, 18, 19, /*k*/20, 21, 22, 23, 24, 25, 26, 27, 28, 29, /*u*/30, 31, 32, 33, 34, /*z*/35, 0, 0, 0, 0, 0];
 const KERNEL_SRC: &str = include_str!("kernel.cl");
 const TERMS_PATH: &str = "terms.txt";
 const SOLUTIONS_PATH: &str = "solutions.txt";
@@ -58,70 +59,6 @@ fn make_v2_address(pkey: &[u8]) -> String {
     }
 
     v2
-}
-
-/// Adds a branch node to a trie at a certain index. Updates the index to the index of the added
-/// branch. Does nothing if a leaf node exists in the same place and follows a branch (without
-/// adding other) if one exists in the same place.
-fn add_branch(trie: &mut Vec<u32>, index: &mut usize, position: u8) {
-    let data = trie[*index + position as usize];
-    if data == 0 { // Empty
-        // Add a new branch
-        let new_index = (trie.len() / 36) - (*index / 36);
-        for _ in 0..36 {trie.push(0)}
-        trie[*index + position as usize] = new_index as u32 + 1;
-        *index += new_index * 36;
-    } else if data == 1 { // Leaf
-        // A shorter prefix already exists, nothing to be done
-    } else { // Branch
-        // Follow the branch that already exists
-        *index += (data - 1) as usize * 36;
-    }
-}
-
-/// Adds a leaf node to a trie at a certain index. Does nothing if either a branch node or a leaf
-/// node already exists in the same place.
-fn add_leaf(trie: &mut Vec<u32>, index: &usize, position: u8) {
-    let data = trie[*index + position as usize];
-    if data == 0 { // Empty
-        // Add the leaf
-        trie[*index + position as usize] = 1;
-    } else if data == 1 { // Leaf
-        // The exact leaf we want already exists, nothing to be done
-    } else { // Branch
-        // A longer prefix already exists here
-        // Should never happen (since they are supposed to be sorted by length)
-    }
-}
-
-/// Makes a 36-ary trie (a.k.a prefix tree) out of a list of terms. Redundant terms (either repeated
-/// terms or one term which is the result from appending to a shorter term) are ignored.
-fn add_terms(trie: &mut Vec<u32>, prefixes: &Vec<&str>) {
-    // Sort terms by shortest first
-    let mut prefixes = prefixes.clone();
-    prefixes.sort_unstable_by(
-        |a, b|
-            if (*a).len() < (*b).len() {
-                cmp::Ordering::Less
-            } else if (*a).len() == (*b).len() {
-                cmp::Ordering::Equal
-            } else {
-                cmp::Ordering::Greater
-            }
-    );
-
-    for prefix in prefixes {
-        let prefix_bytes = prefix.as_bytes();
-        let mut index: usize = 0;
-        for i in 0..min(prefix.len(), 9) {
-            let trie_byte = TRIE_REV_ADDRESS_LOOKUP[prefix_bytes[i] as usize];
-            if i == prefix.len() - 1 {
-                add_leaf(trie, &index, trie_byte);
-            } else {
-                add_branch(trie, &mut index, trie_byte);
-            }
-        }
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -387,10 +324,10 @@ fn mine(program_name: &str, arguments: Vec<String>) {
     for word in terms_string.split_ascii_whitespace() {
         terms.push(word)
     }
-    let mut trie = vec![0_u32; 36];
-    add_terms(&mut trie, &terms);
-    println!("Term tree size: {} Bytes", trie.len() * 4);
-    println!("Loaded {} terms", terms.len());
+    let (trie, warnings) = TrieNode::from_terms(&terms);
+    let trie_encoded = trie.encode();
+    println!("Term tree size: {} Bytes", trie_encoded.len() * 4);
+    println!("Read {} term lines ({} skipped)", terms.len(), warnings.len());
 
     // Present devices
     println!("Using {} devices:", platforms_and_devices.len());
@@ -419,7 +356,7 @@ fn mine(program_name: &str, arguments: Vec<String>) {
         getrandom::getrandom(&mut entropy).expect("Get system entropy");
         let miner = Miner::new(
             &entropy,
-            &trie,
+            &trie_encoded,
             i,
             platforms_and_devices[i],
             tx.clone(),
