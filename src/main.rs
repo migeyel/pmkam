@@ -1,8 +1,3 @@
-extern crate ocl;
-extern crate ocl_extras;
-extern crate getrandom;
-extern crate sha2;
-
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::path::Path;
