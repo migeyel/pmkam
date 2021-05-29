@@ -28,16 +28,6 @@ typedef union UINT {
 #define SIG0(x) (RR((x), 7) ^ RR((x), 18) ^ ((x) >> 3))
 #define SIG1(x) (RR((x), 17) ^ RR((x), 19) ^ ((x) >> 10))
 
-// sha256 initial hash values
-#define H0 0x6a09e667
-#define H1 0xbb67ae85
-#define H2 0x3c6ef372
-#define H3 0xa54ff53a
-#define H4 0x510e527f
-#define H5 0x9b05688c
-#define H6 0x1f83d9ab
-#define H7 0x5be0cd19
-
 // sha256 round constants
 __constant uint K[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -65,30 +55,27 @@ __constant uint K2[64] = {
 
 // perform a single round of sha256 transformation on the given data
 inline void sha256_transform(UINT m[64], UINT H[8]) {
-    int i;
-    uint a, b, c, d, e, f, g, h, t1, t2;
-
-#pragma unroll
-    for (i = 16; i < 64; i++) {
+    #pragma unroll
+    for (int i = 16; i < 64; i++) {
         m[i].i = SIG1(m[i - 2].i)
             + m[i - 7].i
             + SIG0(m[i - 15].i)
             + m[i - 16].i;
     }
 
-    a = H[0].i;
-    b = H[1].i;
-    c = H[2].i;
-    d = H[3].i;
-    e = H[4].i;
-    f = H[5].i;
-    g = H[6].i;
-    h = H[7].i;
+    uint a = H[0].i;
+    uint b = H[1].i;
+    uint c = H[2].i;
+    uint d = H[3].i;
+    uint e = H[4].i;
+    uint f = H[5].i;
+    uint g = H[6].i;
+    uint h = H[7].i;
 
-#pragma unroll
-    for (i = 0; i < 64; i++) {
-        t1 = h + EP1(e) + CH(e, f, g) + K[i] + m[i].i;
-        t2 = EP0(a) + MAJ(a, b, c);
+    #pragma unroll
+    for (int i = 0; i < 64; i++) {
+        uint t1 = h + EP1(e) + CH(e, f, g) + K[i] + m[i].i;
+        uint t2 = EP0(a) + MAJ(a, b, c);
         h = g;
         g = f;
         f = e;
@@ -112,22 +99,19 @@ inline void sha256_transform(UINT m[64], UINT H[8]) {
 // perform a single round of sha256 transformation on the second block of a
 // 64-byte message
 inline void sha256_transform2(UINT H[8]) {
-    int i;
-    uint a, b, c, d, e, f, g, h, t1, t2;
+    uint a = H[0].i;
+    uint b = H[1].i;
+    uint c = H[2].i;
+    uint d = H[3].i;
+    uint e = H[4].i;
+    uint f = H[5].i;
+    uint g = H[6].i;
+    uint h = H[7].i;
 
-    a = H[0].i;
-    b = H[1].i;
-    c = H[2].i;
-    d = H[3].i;
-    e = H[4].i;
-    f = H[5].i;
-    g = H[6].i;
-    h = H[7].i;
-
-#pragma unroll
-    for (i = 0; i < 64; i++) {
-        t1 = h + EP1(e) + CH(e, f, g) + K2[i];
-        t2 = EP0(a) + MAJ(a, b, c);
+    #pragma unroll
+    for (int i = 0; i < 64; i++) {
+        uint t1 = h + EP1(e) + CH(e, f, g) + K2[i];
+        uint t2 = EP0(a) + MAJ(a, b, c);
         h = g;
         g = f;
         f = e;
@@ -153,17 +137,15 @@ inline void sha256_transform2(UINT H[8]) {
 // UINT hash[8] - output bytes - will be modified
 // TODO: Check all comments before release
 inline void digest64(UINT data[64], UINT hash[8]) {
-    // init hash state
-    hash[0].i = H0;
-    hash[1].i = H1;
-    hash[2].i = H2;
-    hash[3].i = H3;
-    hash[4].i = H4;
-    hash[5].i = H5;
-    hash[6].i = H6;
-    hash[7].i = H7;
+    hash[0].i = 0x6a09e667;
+    hash[1].i = 0xbb67ae85;
+    hash[2].i = 0x3c6ef372;
+    hash[3].i = 0xa54ff53a;
+    hash[4].i = 0x510e527f;
+    hash[5].i = 0x9b05688c;
+    hash[6].i = 0x1f83d9ab;
+    hash[7].i = 0x5be0cd19;
 
-    // transform twice
     sha256_transform(data, hash);
     sha256_transform2(hash);
 }
@@ -178,7 +160,7 @@ inline void digest64(UINT data[64], UINT hash[8]) {
 
 // Converts a sha256 hash to hexadecimal
 inline void hash_to_hex(const UINT hash[8], UINT hex[64]) {    
-#pragma unroll
+    #pragma unroll
     for (int i = 0; i < 16; i += 2) {
         uchar h, h1, h2;
 
@@ -269,7 +251,7 @@ inline void shift_chain(HASH_CHAIN_T *chain) {
     );
     chain->protein_start = (chain->protein_start + 1) % 18;
 
-#pragma unroll
+    #pragma unroll
     for (int i = 0; i < 8; i++) {
         chain->chain[chain->chain_start + i] = UINT_BYTE_BE(chain->last_hash[i / 4], i % 4);
     }
@@ -332,8 +314,8 @@ inline bool check_address(const HASH_CHAIN_T *chain,__global const uint *trie) {
     }
 
     // Put in last char in the address
-#pragma unroll
-    for (i = 0; i < 9; i++) {
+    #pragma unroll
+    for (int i = 0; i < 9; i++) {
         if (!used_protein[i]) {
             v2[8] = chain->protein[(chain->protein_start + 2 * i) % 18];
             break;
