@@ -17,13 +17,12 @@ mod trie;
 use trie::TrieNode;
 
 const THREAD_ITER: usize = 4096;
-const ADDRESS_LOOKUP: [char; 256] = ['0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1', '1', '1', '1', '2', '2', '2', '2', '2', '2', '2', '3', '3', '3', '3', '3', '3', '3', '4', '4', '4', '4', '4', '4', '4', '5', '5', '5', '5', '5', '5', '5', '6', '6', '6', '6', '6', '6', '6', '7', '7', '7', '7', '7', '7', '7', '8', '8', '8', '8', '8', '8', '8', '9', '9', '9', '9', '9', '9', '9', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'b', 'b', 'b', 'b', 'b', 'b', 'b', 'c', 'c', 'c', 'c', 'c', 'c', 'c', 'd', 'd', 'd', 'd', 'd', 'd', 'd', 'e', 'e', 'e', 'e', 'e', 'e', 'e', 'f', 'f', 'f', 'f', 'f', 'f', 'f', 'g', 'g', 'g', 'g', 'g', 'g', 'g', 'h', 'h', 'h', 'h', 'h', 'h', 'h', 'i', 'i', 'i', 'i', 'i', 'i', 'i', 'j', 'j', 'j', 'j', 'j', 'j', 'j', 'k', 'k', 'k', 'k', 'k', 'k', 'k', 'l', 'l', 'l', 'l', 'l', 'l', 'l', 'm', 'm', 'm', 'm', 'm', 'm', 'm', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'o', 'o', 'o', 'o', 'o', 'o', 'o', 'p', 'p', 'p', 'p', 'p', 'p', 'p', 'q', 'q', 'q', 'q', 'q', 'q', 'q', 'r', 'r', 'r', 'r', 'r', 'r', 'r', 's', 's', 's', 's', 's', 's', 's', 't', 't', 't', 't', 't', 't', 't', 'u', 'u', 'u', 'u', 'u', 'u', 'u', 'v', 'v', 'v', 'v', 'v', 'v', 'v', 'w', 'w', 'w', 'w', 'w', 'w', 'w', 'x', 'x', 'x', 'x', 'x', 'x', 'x', 'y', 'y', 'y', 'y', 'y', 'y', 'y', 'z', 'z', 'z', 'z', 'z', 'z', 'z', 'e', 'e', 'e', 'e'];
 const KERNEL_SRC: &str = include_str!("kernel.cl");
 const TERMS_PATH: &str = "terms.txt";
 const SOLUTIONS_PATH: &str = "solutions.txt";
 const DESIRED_ITER_TIME: f64 = 1_f64;
 const PRINT_HASH_RATE_INTERVAL: f64 = 1_f64;
-const AVERAGE_HASHRATE_ITER_COUNT: usize = 10_usize; 
+const AVERAGE_HASHRATE_ITER_COUNT: usize = 10_usize;
 
 /// Hashes a byte slice into a byte array, Krist style.
 ///
@@ -33,6 +32,15 @@ fn digest(data: &[u8]) -> [u8; 32] {
         hex + &format!("{:02x}", byte)
     });
     *Sha256::digest(hex.as_bytes()).as_ref()
+}
+
+fn make_address_byte(byte: u8) -> char {
+    match byte / 7 {
+        byte @ 0..=9 => (byte + '0' as u8) as char,
+        byte @ 10..=35 => (byte + 'a' as u8 - 10) as char,
+        36 => 'e',
+        _ => unreachable!(),
+    }
 }
 
 /// Makes a Krist v2 address from a private key.
@@ -50,7 +58,7 @@ fn make_v2_address(pkey: &[u8]) -> String {
     while i < 9 {
         let link = stick[i] % 9;
         if let Some(val) = protein[link as usize] {
-            v2.push(ADDRESS_LOOKUP[val as usize]);
+            v2.push(make_address_byte(val));
             protein[link as usize] = None;
             i += 1;
         } else {
