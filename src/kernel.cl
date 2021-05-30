@@ -153,10 +153,7 @@ inline void digest64(UINT data[64], UINT hash[8]) {
 // Address miner
 
 #define THREAD_ITER 4096 // How many addresses each work unit checks
-#define CHAIN_SIZE (16 * 8) // 16 stored iterations with 8 bytes each
-#define MAX_CHAIN_ITER 16 // The max amout of iterations the check_address function does before giving up.
-                          // Must not be greater than CHAIN_SIZE / 8. (otherwise false positives will happen without any other benefit).
-                          // A max chain iter of n means a failure probability of at most (7/9)^n per address checked.
+#define CHAIN_SIZE 32
 
 // Converts a sha256 hash to hexadecimal
 inline void hash_to_hex(const UINT hash[8], UINT hex[64]) {    
@@ -231,7 +228,7 @@ inline uchar make_address_byte_s(uchar byte) {
 typedef struct HASH_CHAIN_T {
     UINT last_hash[8];
     uint chain_start;
-    uchar chain[CHAIN_SIZE];
+    uchar chain[CHAIN_SIZE * 8];
     uchar protein[18];
     uint protein_start;
 } HASH_CHAIN_T;
@@ -255,7 +252,7 @@ inline void shift_chain(HASH_CHAIN_T *chain) {
     for (int i = 0; i < 8; i++) {
         chain->chain[chain->chain_start + i] = UINT_BYTE_BE(chain->last_hash[i / 4], i % 4);
     }
-    chain->chain_start = (chain->chain_start + 8) % CHAIN_SIZE;
+    chain->chain_start = (chain->chain_start + 8) % (CHAIN_SIZE * 8);
 }
 
 // 0 - Dead end
@@ -287,7 +284,7 @@ inline bool check_address(const HASH_CHAIN_T *chain,__global const uint *trie) {
     int i = 0;
     uint trie_index = 0;
     bool used_protein[9] = {};
-    while (i < 8 && iter < MAX_CHAIN_ITER) {
+    while (i < 8 && iter < CHAIN_SIZE) {
         link = chain->chain[chain_index + i] % 9;
         if (!used_protein[link]) {
             v2[i] = chain->protein[(chain->protein_start + 2 * link) % 18];
@@ -304,12 +301,12 @@ inline bool check_address(const HASH_CHAIN_T *chain,__global const uint *trie) {
                     return true;
             }
         } else {
-            chain_index = (chain_index + 8) % CHAIN_SIZE;
+            chain_index = (chain_index + 8) % (CHAIN_SIZE * 8);
             iter++;
         }
     }
 
-    if (iter >= MAX_CHAIN_ITER) {
+    if (iter >= CHAIN_SIZE) {
         return 0;
     }
 
@@ -366,7 +363,7 @@ __kernel void mine(
     for (int i = 1; i < 18; i++) {
         shift_chain(&chain);
     }
-    for (int i = 0; i < CHAIN_SIZE; i += 8) {
+    for (int i = 0; i < CHAIN_SIZE; i++) {
         shift_chain(&chain);
     }
 
