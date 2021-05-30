@@ -10,8 +10,7 @@ use ocl::core::{DeviceInfoResult};
 use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::thread;
-use std::env::args;
-use std::ffi::OsStr;
+use clap::{App, Arg, SubCommand, crate_version, crate_authors, crate_description};
 
 mod trie;
 use trie::TrieNode;
@@ -278,30 +277,19 @@ impl Miner {
     }
 }
 
-fn mine(program_name: &str, arguments: Vec<String>) {
-    // Parse arguments
+fn mine(arguments: &[usize]) {
     let all_devices_and_platforms = get_all_devices();
     let mut platforms_and_devices = Vec::new();
-    if arguments.len() == 0 || arguments[0] == "all" {
-        for i in 0..all_devices_and_platforms.len() {
-            platforms_and_devices.push(all_devices_and_platforms[i]);
-        }
+    if arguments.is_empty() {
+        platforms_and_devices.extend_from_slice(&all_devices_and_platforms);
     } else {
         let mut user_selected = vec![false; all_devices_and_platforms.len()];
-        for i in 0..arguments.len() {
-            let arg = &arguments[i];
-            let arg = match arg.parse::<usize>() {
-                Ok(arg) => arg,
-                Err(e) => {
-                    println!("ERROR: Could not parse argument {} (\"{}\"): {}", i, arg, e);
-                    continue;
-                },
-            };
-            if arg >= all_devices_and_platforms.len() {
-                println!("ERROR: Argument {} (\"{}\") indicates an unavailable device", i, arg);
+        for arg in arguments.iter() {
+            if *arg >= all_devices_and_platforms.len() {
+                println!("ERROR: Device {} is unavailable", arg);
                 continue;
             }
-            user_selected[arg] = true;
+            user_selected[*arg] = true;
         }
         for i in 0..all_devices_and_platforms.len() {
             if user_selected[i] {
@@ -339,13 +327,6 @@ fn mine(program_name: &str, arguments: Vec<String>) {
 
     // Present devices
     println!("Using {} devices:", platforms_and_devices.len());
-    if platforms_and_devices.len() == 0 {
-        println!("NOTE: Run {} list to list all devices", program_name);
-        println!(
-            "NOTE: Run {} mine [id device_0 [device_1 [...]]] to mine with some devices",
-            program_name
-        );
-    }
     for platform_and_device in platforms_and_devices.iter() {
         let device = platform_and_device.device;
         let name = match device.name() {
@@ -494,44 +475,52 @@ fn mine(program_name: &str, arguments: Vec<String>) {
     }
 }
 
-fn print_usage(program_name: &str) {
-    println!("pmkam - PG's Messy (OpenCL) Krist Address Miner v{}", env!("CARGO_PKG_VERSION"));
-    println!("This is a prefix-only miner with multiple term support. Put the terms you want to \
-              look for in a \"{}\" file. Results are written to the \"{}\" file \
-              as well as presented on the screen.", TERMS_PATH, SOLUTIONS_PATH);
-    println!("Some parts of this program are licensed under different terms and are attributed \
-              to their respective authors. This includes all dependencies from crates.io and part \
-              of the kernel.cl file.");
-    println!("Usage:\n\t\
-              {0} mine [device_0 [device_1 [...]]] - Starts the miner with some devices\n\t\
-              {0} mine all - Starts the miner with all devices\n\t\
-              {0} list - Displays all devices\n\t\
-              {0} help - Displays this", program_name);
-}
-
 pub fn main() {
-    let program_name = args()
-        .next()
-        .as_ref()
-        .map(Path::new)
-        .and_then(Path::file_name)
-        .and_then(OsStr::to_str)
-        .map(String::from)
-        .unwrap();
+    let after_help = format!(
+        "pmkam is a prefix-only vanity miner with multiple term support. \
+        Put the prefixes you want to search for in a \"{}\" file. \
+        Results are written to a \"{}\" file as well as presented on the \
+        screen.",
+        TERMS_PATH, SOLUTIONS_PATH,
+    );
 
-    // * i need a proper argument parser what am i doing * //
-    let arg_0 = args()
-        .skip(1)
-        .next();
-    let arg_0 = arg_0
-        .as_ref()
-        .and_then(|a| Some(a.as_str()));
+    let mut app = App::new("pmkam")
+        .max_term_width(80)
+        .version(crate_version!())
+        .author(crate_authors!())
+        .about(crate_description!())
+        .after_help(&*after_help)
+        .subcommand(SubCommand::with_name("list")
+            .about("Displays all available devices"))
+        .subcommand(SubCommand::with_name("mine")
+            .about("Mines for prefixes")
+            .arg(Arg::with_name("devices")
+                .help("Specify devices to mine with")
+                .long("devices")
+                .takes_value(true)
+                .multiple(true)
+                .use_delimiter(true)
+                .validator(|arg| {
+                    if let Err(_) = arg.parse::<usize>() {
+                        Err("must be a nonnegative integer".into())
+                    } else {
+                        Ok(())
+                    }
+                })));
+    let matches = app.clone().get_matches();
 
-    match arg_0 {
-        Some("help") => print_usage(&program_name),
-        Some("mine") => mine(&program_name, args().skip(2).collect()),
-        Some("list") => print_all_devices(),
-        Some(_) => print_usage(&program_name),
-        None => print_usage(&program_name),
+    match matches.subcommand() {
+        ("list", _) => print_all_devices(),
+        ("mine", Some(matches)) => {
+            let values = matches.values_of("devices")
+                .unwrap_or_default()
+                .map(|v| v.parse().unwrap())
+                .collect::<Vec<usize>>();
+            mine(&values);
+        }
+        _ => {
+            app.print_help().unwrap();
+            println!();
+        }
     }
 }
