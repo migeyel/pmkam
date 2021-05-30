@@ -11,6 +11,7 @@ use std::thread;
 use clap::{App, Arg, SubCommand, crate_version, crate_authors, crate_description};
 use trie::TrieNode;
 use miner::Miner;
+use anyhow::anyhow;
 
 const TERMS_PATH: &str = "terms.txt";
 const SOLUTIONS_PATH: &str = "solutions.txt";
@@ -119,7 +120,7 @@ fn print_all_devices() {
     }
 }
 
-fn mine(mut arguments: Vec<usize>) {
+fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
     let all_devices = get_all_devices();
     let devices = if arguments.is_empty() {
         all_devices
@@ -133,12 +134,10 @@ fn mine(mut arguments: Vec<usize>) {
     };
 
     let mut terms = File::open(TERMS_PATH)
-        .map_err(|e| format!("Could not open {}: {}", TERMS_PATH, e))
-        .unwrap();
+        .map_err(|e| anyhow!("Could not open {}: {}", TERMS_PATH, e))?;
     let mut terms_string = String::new();
     terms.read_to_string(&mut terms_string)
-        .map_err(|e| format!("Could not read {}: {}", TERMS_PATH, e))
-        .unwrap();
+        .map_err(|e| anyhow!("Could not read {}: {}", TERMS_PATH, e))?;
     let lines = terms_string.lines()
         .map(|l| l.trim())
         .collect::<Vec<_>>();
@@ -163,7 +162,7 @@ fn mine(mut arguments: Vec<usize>) {
     let mut miners = Vec::new();
     for i in 0..devices.len() {
         let mut entropy = [0_u8; 10];
-        getrandom::getrandom(&mut entropy).expect("Get system entropy");
+        getrandom::getrandom(&mut entropy)?;
         let miner = Miner::new(
             &entropy,
             &trie_encoded,
@@ -181,8 +180,12 @@ fn mine(mut arguments: Vec<usize>) {
         miners.push(miner);
     }
     let mut hash_rates = Vec::new();
-    for mut miner in miners {
-        thread::spawn(move || miner.mine());
+    for (mut miner, i) in miners.into_iter().zip(0..) {
+        thread::spawn(move || {
+            if let Err(e) = miner.mine() {
+                warn!("Miner {} has errored: {}", i, e);
+            }
+        });
         hash_rates.push(vec![0_f64]);
     }
 
@@ -190,8 +193,7 @@ fn mine(mut arguments: Vec<usize>) {
         .create(true)
         .append(true)
         .open(SOLUTIONS_PATH)
-        .map_err(|e| format!("Could not open {}: {}", SOLUTIONS_PATH, e))
-        .unwrap();
+        .map_err(|e| anyhow!("Could not open {}: {}", SOLUTIONS_PATH, e))?;
 
     // Get and present information from miners
     let mut num_solutions = 0;
@@ -281,7 +283,7 @@ fn mine(mut arguments: Vec<usize>) {
     }
 }
 
-pub fn main() {
+pub fn main() -> anyhow::Result<()> {
     let after_help = format!(
         "pmkam is a prefix-only vanity miner with multiple term support. \
         Put the prefixes you want to search for in a \"{}\" file. \
@@ -322,11 +324,13 @@ pub fn main() {
                 .unwrap_or_default()
                 .map(|v| v.parse().unwrap())
                 .collect::<Vec<usize>>();
-            mine(values);
+            mine(values)?;
         }
         _ => {
-            app.print_help().unwrap();
+            app.print_help()?;
             println!();
         }
     }
+
+    Ok(())
 }

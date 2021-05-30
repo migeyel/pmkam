@@ -1,5 +1,6 @@
 use std::{sync::mpsc::Sender, time::Instant};
 use ocl::{Buffer, Device, Kernel, MemFlags, ProQue, SpatialDims, core::{DeviceInfo, DeviceInfoResult}};
+use anyhow::anyhow;
 
 const THREAD_ITER: usize = 4096;
 const DESIRED_ITER_TIME: f64 = 1_f64;
@@ -24,9 +25,10 @@ impl Miner {
         id: usize,
         device: Device,
         tx: Sender<(usize, Option<Vec<u8>>, f64)>
-    ) -> ocl::Result<Self> {
+    ) -> anyhow::Result<Self> {
         // Get local work size from device
-        let local_size = device.info(DeviceInfo::MaxWorkGroupSize)?;
+        let local_size = device.info(DeviceInfo::MaxWorkGroupSize)
+            .map_err(|e| anyhow!(e))?;
         let local_size = match local_size {
             DeviceInfoResult::MaxWorkGroupSize(local_size) => local_size,
             _ => 0_usize
@@ -36,7 +38,8 @@ impl Miner {
         let pq_ocl = ProQue::builder()
             .device(device)
             .src(KERNEL_SRC)
-            .build()?;
+            .build()
+            .map_err(|e| anyhow!(e))?;
 
         // Build buffers
         let entropy_buffer = Buffer::builder()
@@ -44,27 +47,31 @@ impl Miner {
             .flags(MemFlags::new().read_only())
             .len(10)
             .copy_host_slice(entropy)
-            .build()?;
+            .build()
+            .map_err(|e| anyhow!(e))?;
 
         let trie_buffer = Buffer::builder()
             .queue(pq_ocl.queue().clone())
             .flags(MemFlags::new().read_only())
             .len(trie.len())
             .copy_host_slice(&trie)
-            .build()?;
+            .build()
+            .map_err(|e| anyhow!(e))?;
 
         let solved_buffer: Buffer<u8> = Buffer::builder()
             .queue(pq_ocl.queue().clone())
             .flags(MemFlags::new().write_only())
             .len(1)
             .copy_host_slice(&[0])
-            .build()?;
+            .build()
+            .map_err(|e| anyhow!(e))?;
 
         let pkey_buffer: Buffer<u8> = Buffer::builder()
             .queue(pq_ocl.queue().clone())
             .flags(MemFlags::new().write_only())
             .len(32)
-            .build()?;
+            .build()
+            .map_err(|e| anyhow!(e))?;
 
         // Build kernel
         let kernel = pq_ocl.kernel_builder("mine")
@@ -74,7 +81,8 @@ impl Miner {
             .arg_named("nonce", 0u64)
             .arg_named("solved", &solved_buffer)
             .arg_named("pkey", &pkey_buffer)
-            .build()?;
+            .build()
+            .map_err(|e| anyhow!(e))?;
 
         Ok(Self {
             id,
@@ -89,19 +97,19 @@ impl Miner {
         })
     }
 
-    pub fn mine(&mut self) {
+    pub fn mine(&mut self) -> anyhow::Result<()> {
         let mut vec_solved = vec![0];
 
         loop {
             let t0 = Instant::now();
 
             // Enqueue kernel and wait for it
-            unsafe { self.kernel.enq() }.expect("Enqueue kernel");
-            self.pq_ocl.finish().expect("Finish queue");
+            unsafe { self.kernel.enq() }.map_err(|e| anyhow!(e))?;
+            self.pq_ocl.finish().map_err(|e| anyhow!(e))?;
 
             // Read from solved
             self.solved_buffer.read(&mut vec_solved).enq()
-                .expect("Read solved buffer");
+                .map_err(|e| anyhow!(e))?;
 
             // Re-calculate global work size to match the fixed iter time
             let dt = Instant::now() - t0;
@@ -119,15 +127,15 @@ impl Miner {
             // Increment nonce
             self.nonce += 1;
             self.kernel.set_arg("nonce", self.nonce)
-                .expect("Set nonce argument");
+                .map_err(|e| anyhow!(e))?;
 
             // Send information to the main thread
             if vec_solved[0] == 1 {
                 let mut vec_pkey = vec![0; 32];
                 self.solved_buffer.write(&vec_pkey[..1]).enq()
-                    .expect("Clear solved buffer");
+                    .map_err(|e| anyhow!(e))?;
                 self.pkey_buffer.read(&mut vec_pkey).enq()
-                    .expect("Read pkey buffer");
+                    .map_err(|e| anyhow!(e))?;
 
                 let dt = Instant::now() - t0;
                 let hash_rate = THREAD_ITER as f64
@@ -135,7 +143,7 @@ impl Miner {
                     / dt.as_secs_f64();
 
                 self.tx.send((self.id, Some(vec_pkey), hash_rate))
-                    .expect("Send message to main thread");
+                    .map_err(|e| anyhow!(e))?;
             } else {
                 let dt = Instant::now() - t0;
                 let hash_rate = THREAD_ITER as f64
@@ -143,7 +151,7 @@ impl Miner {
                     / dt.as_secs_f64();
 
                 self.tx.send((self.id, None, hash_rate))
-                    .expect("Send message to main thread");
+                    .map_err(|e| anyhow!(e))?;
             }
         }
     }
