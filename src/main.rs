@@ -3,7 +3,6 @@ mod miner;
 
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
-use std::path::Path;
 use ocl::{Platform, Device};
 use std::time::{Instant, Duration};
 use sha2::{Sha256, Digest};
@@ -11,21 +10,23 @@ use std::sync::mpsc;
 use std::thread;
 use clap::{App, Arg, SubCommand, crate_version, crate_authors, crate_description};
 use trie::TrieNode;
-use miner::{PlatformDevice, Miner};
+use miner::Miner;
 
 const TERMS_PATH: &str = "terms.txt";
 const SOLUTIONS_PATH: &str = "solutions.txt";
 const PRINT_HASH_RATE_INTERVAL: f64 = 1_f64;
 const AVERAGE_HASHRATE_ITER_COUNT: usize = 10_usize;
 
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter()
+        .fold(String::new(), |s, byte| s + &format!("{:02x}", byte))
+}
+
 /// Hashes a byte slice into a byte array, Krist style.
 ///
 /// In pseudocode it's the same as `SHA256(hex(data))`.
 fn digest(data: &[u8]) -> [u8; 32] {
-    let hex = data.iter().fold(String::new(), |hex, byte| {
-        hex + &format!("{:02x}", byte)
-    });
-    *Sha256::digest(hex.as_bytes()).as_ref()
+    *Sha256::digest(hex(data).as_bytes()).as_ref()
 }
 
 fn make_address_byte(byte: u8) -> char {
@@ -63,23 +64,24 @@ fn make_v2_address(pkey: &[u8]) -> String {
     v2
 }
 
-fn get_all_devices() -> Vec<PlatformDevice> {
+macro_rules! warn {
+    ($($arg:tt)*) => {
+        eprintln!("Warning: {}", format!($($arg)*));
+    }
+}
+
+fn get_all_devices() -> Vec<Device> {
     let mut result = Vec::new();
-    let platforms = Platform::list();
-    for platform in platforms {
-        let platform_devices = Device::list_all(platform);
-        match platform_devices {
+    for platform in Platform::list().iter() {
+        match Device::list_all(platform) {
             Ok(platform_devices) => {
-                for device in platform_devices {
-                    result.push(PlatformDevice {
-                        device,
-                        platform,
-                    });
+                for device in platform_devices.into_iter() {
+                    result.push(device);
                 }
             }
             Err(e) => {
-                println!("ERROR: Could not load devices: {}", e);
-                return Vec::new();
+                warn!("Could not load devices: {}", e);
+                continue;
             }
         }
     }
@@ -87,29 +89,28 @@ fn get_all_devices() -> Vec<PlatformDevice> {
 }
 
 fn print_all_devices() {
-    let platform_devices = get_all_devices();
-    println!("Found {} devices", platform_devices.len());
-    for i in 0..platform_devices.len() {
-        let device = platform_devices[i].device;
+    let devices = get_all_devices();
+    println!("Found {} devices", devices.len());
+    for i in 0..devices.len() {
         let mut buffer = String::new();
         buffer += &format!("Device {}:\n", i);
-        let name = device.name();
-        match name {
+        
+        let device = devices[i];
+        match device.name() {
             Ok(name) => {
                 buffer += &format!("\tName: {}\n", name);
             },
             Err(e) => {
-                println!("ERROR: Could not load name for device #{}: {}", i, e);
+                warn!("Could not load name for device {}: {}", i, e);
                 continue;
             }
         }
-        let vendor = device.vendor();
-        match vendor {
+        match device.vendor() {
             Ok(vendor) => {
                 buffer += &format!("\tVendor: {}\n", vendor);
             },
             Err(e) => {
-                println!("ERROR: Could not load vendor info for device #{}: {}", i, e);
+                warn!("Could not load vendor for device #{}: {}", i, e);
                 continue;
             }
         }
@@ -118,83 +119,62 @@ fn print_all_devices() {
     }
 }
 
-fn mine(arguments: &[usize]) {
-    let all_devices_and_platforms = get_all_devices();
-    let mut platforms_and_devices = Vec::new();
-    if arguments.is_empty() {
-        platforms_and_devices.extend_from_slice(&all_devices_and_platforms);
+fn mine(mut arguments: Vec<usize>) {
+    let all_devices = get_all_devices();
+    let devices = if arguments.is_empty() {
+        all_devices
     } else {
-        let mut user_selected = vec![false; all_devices_and_platforms.len()];
-        for arg in arguments.iter() {
-            if *arg >= all_devices_and_platforms.len() {
-                println!("ERROR: Device {} is unavailable", arg);
-                continue;
-            }
-            user_selected[*arg] = true;
-        }
-        for i in 0..all_devices_and_platforms.len() {
-            if user_selected[i] {
-                platforms_and_devices.push(all_devices_and_platforms[i]);
-            }
-        }
-    }
-
-   // Read terms
-    let path = Path::new(TERMS_PATH);
-    let mut terms_file = match File::open(&path) {
-        Err(e) => {
-            println!("ERROR: Could not open {}: {}", TERMS_PATH, e);
-            panic!("Open terms file");
-        },
-        Ok(val) => val,
+        arguments.sort_unstable();
+        all_devices.into_iter()
+            .zip(0..)
+            .filter(|di| arguments.binary_search(&di.1).is_ok())
+            .map(|di| di.0)
+            .collect()
     };
+
+    let mut terms = File::open(TERMS_PATH)
+        .map_err(|e| format!("Could not open {}: {}", TERMS_PATH, e))
+        .unwrap();
     let mut terms_string = String::new();
-    if let Err(e) = terms_file.read_to_string(&mut terms_string) {
-        println!("ERROR: Could not read {}: {}", TERMS_PATH, e);
-        panic!("Read terms file");
+    terms.read_to_string(&mut terms_string)
+        .map_err(|e| format!("Could not read {}: {}", TERMS_PATH, e))
+        .unwrap();
+    let lines = terms_string.lines()
+        .map(|l| l.trim())
+        .collect::<Vec<_>>();
+    let (trie, warnings) = TrieNode::from_terms(&lines);
+    for warning in warnings.iter() {
+        warn!("{}", warning);
     }
-    if !terms_string.is_ascii() {
-        println!("ERROR: Expected {} to only contain ASCII", TERMS_PATH);
-        panic!("Parse terms file");
-    }
-    let mut terms = Vec::new();
-    for word in terms_string.split_ascii_whitespace() {
-        terms.push(word)
-    }
-    let (trie, warnings) = TrieNode::from_terms(&terms);
     let trie_encoded = trie.encode();
     println!("Term tree size: {} Bytes", trie_encoded.len() * 4);
-    println!("Read {} term lines ({} skipped)", terms.len(), warnings.len());
 
     // Present devices
-    println!("Using {} devices:", platforms_and_devices.len());
-    for platform_and_device in platforms_and_devices.iter() {
-        let device = platform_and_device.device;
-        let name = match device.name() {
-            Ok(name) => name,
-            Err(_) => continue,
-        };
-        println!("\tUsing device: {}", name);
+    println!("Using {} devices:", devices.len());
+    for device in devices.iter() {
+        if let Ok(name) = device.name() {
+            println!("\tUsing device: {}", name);
+        }
     }
 
     // Make miners
     println!("Starting miners...");
     let (tx, rx) = mpsc::channel();
     let mut miners = Vec::new();
-    for i in 0..platforms_and_devices.len() {
+    for i in 0..devices.len() {
         let mut entropy = [0_u8; 10];
         getrandom::getrandom(&mut entropy).expect("Get system entropy");
         let miner = Miner::new(
             &entropy,
             &trie_encoded,
             i,
-            platforms_and_devices[i],
+            devices[i],
             tx.clone(),
         );
         let miner = match miner {
             Ok(miner) => miner,
             Err(e) => {
-                eprintln!("ERROR: Could not build miner #{}: {}", i, e);
+                warn!("Could not build miner #{}: {}", i, e);
                 continue;
             }
         };
@@ -206,17 +186,12 @@ fn mine(arguments: &[usize]) {
         hash_rates.push(vec![0_f64]);
     }
 
-    let solutions_file = OpenOptions::new()
+    let mut solutions_file = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(SOLUTIONS_PATH);
-    let mut solutions_file = match solutions_file {
-        Ok(solutions_file) => solutions_file,
-        Err(e) => {
-            println!("ERROR: Could not open {}: {}", SOLUTIONS_PATH, e);
-            panic!("Open solutions file");
-        }
-    };
+        .open(SOLUTIONS_PATH)
+        .map_err(|e| format!("Could not open {}: {}", SOLUTIONS_PATH, e))
+        .unwrap();
 
     // Get and present information from miners
     let mut num_solutions = 0;
@@ -239,12 +214,8 @@ fn mine(arguments: &[usize]) {
         }
 
         // Present solutions
-        for solution in solutions.iter() {
-            print!("New solution: ");
-            for byte in solution {
-                print!("{:02x}", byte);
-            }
-            println!(": {}", make_v2_address(&solution));
+        for sol in solutions.iter() {
+            println!("New solution: {}: {}", hex(sol), make_v2_address(sol));
         }
 
         // Format solutions
@@ -295,20 +266,14 @@ fn mine(arguments: &[usize]) {
         println!("{}", info_buffer);
 
         // Save solutions
-        for solution in solutions.iter() {
-            let mut buffer = String::new();
-            for byte in solution {
-                buffer += &format!("{:02x}", byte);
-            }
-            buffer += " ";
-            buffer += &make_v2_address(solution);
-            buffer += "\n";
-            if let Err(e) = solutions_file.write(buffer.as_bytes()) {
-                println!("ERROR: Could not write to {}: {}", SOLUTIONS_PATH, e);
+        for sol in solutions.iter() {
+            let line = format!("{} {}\n", hex(sol), make_v2_address(sol));
+            if let Err(e) = solutions_file.write(line.as_bytes()) {
+                warn!("Could not write to {}: {}", SOLUTIONS_PATH, e);
             }
         }
         if let Err(e) = solutions_file.flush() {
-            println!("ERROR: Could not flush file {}: {}", SOLUTIONS_PATH, e);
+            warn!("Could not flush file {}: {}", SOLUTIONS_PATH, e);
         }
 
         // Sleep
@@ -357,7 +322,7 @@ pub fn main() {
                 .unwrap_or_default()
                 .map(|v| v.parse().unwrap())
                 .collect::<Vec<usize>>();
-            mine(&values);
+            mine(values);
         }
         _ => {
             app.print_help().unwrap();

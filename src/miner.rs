@@ -1,15 +1,9 @@
 use std::{sync::mpsc::Sender, time::Instant};
-use ocl::{Buffer, Device, Kernel, MemFlags, Platform, ProQue, SpatialDims, core::{DeviceInfo, DeviceInfoResult}};
+use ocl::{Buffer, Device, Kernel, MemFlags, ProQue, SpatialDims, core::{DeviceInfo, DeviceInfoResult}};
 
 const THREAD_ITER: usize = 4096;
 const DESIRED_ITER_TIME: f64 = 1_f64;
 const KERNEL_SRC: &str = include_str!("kernel.cl");
-
-#[derive(Clone, Copy)]
-pub struct PlatformDevice {
-    pub platform: Platform,
-    pub device: Device,
-}
 
 pub struct Miner {
     id: usize,
@@ -28,12 +22,9 @@ impl Miner {
         entropy: &[u8],
         trie: &Vec<u32>,
         id: usize,
-        platform_device: PlatformDevice,
+        device: Device,
         tx: Sender<(usize, Option<Vec<u8>>, f64)>
     ) -> ocl::Result<Self> {
-        let platform = platform_device.platform;
-        let device = platform_device.device;
-
         // Get local work size from device
         let local_size = device.info(DeviceInfo::MaxWorkGroupSize)?;
         let local_size = match local_size {
@@ -43,7 +34,6 @@ impl Miner {
 
         // Build ProQue
         let pq_ocl = ProQue::builder()
-            .platform(platform)
             .device(device)
             .src(KERNEL_SRC)
             .build()?;
