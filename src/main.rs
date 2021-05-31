@@ -161,7 +161,7 @@ fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
     let (tx, rx) = mpsc::channel();
     let mut miners = Vec::new();
     for i in 0..devices.len() {
-        let mut entropy = [0_u8; 10];
+        let mut entropy = [0_u8; 16];
         getrandom::getrandom(&mut entropy)?;
         let miner = Miner::new(
             &entropy,

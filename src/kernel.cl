@@ -323,7 +323,7 @@ inline bool check_address(const HASH_CHAIN_T *chain,__global const uint *trie) {
 }
 
 __kernel void mine(
-    __constant const uchar *entropy,      // 10 bytes
+    __constant const uchar *entropy,      // 16 bytes
     __global const uint *trie,            // Variable size
     const ulong nonce,
     __global uchar *solved,               // 1 byte
@@ -336,12 +336,12 @@ __kernel void mine(
     ulong nonce_seed = nonce;
     UINT seed[64] = {};
     
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 16; i++) {
         UINT_BYTE_BE(seed[i / 4], i % 4) = entropy[i];
     }
-    seed[3].i = gid_seed;
-    seed[4].i = nonce_seed % UINT_MAX;
-    seed[5].i = nonce_seed / UINT_MAX;
+    seed[4].i = gid_seed;
+    seed[5].i = nonce_seed % UINT_MAX;
+    seed[6].i = nonce_seed / UINT_MAX;
 
     UINT seed_hash[8];
     digest64(seed, seed_hash);

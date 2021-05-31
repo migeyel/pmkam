@@ -20,7 +20,7 @@ pub struct Miner {
 
 impl Miner {
     pub fn new(
-        entropy: &[u8],
+        entropy: &[u8; 16],
         trie: &Vec<u32>,
         id: usize,
         device: Device,
@@ -45,8 +45,8 @@ impl Miner {
         let entropy_buffer = Buffer::builder()
             .queue(pq_ocl.queue().clone())
             .flags(MemFlags::new().read_only())
-            .len(10)
-            .copy_host_slice(entropy)
+            .len(16)
+            .copy_host_slice(&entropy[..])
             .build()
             .map_err(|e| anyhow!(e))?;
 
