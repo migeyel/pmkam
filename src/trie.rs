@@ -33,7 +33,7 @@ enum TrieNodeOpt {
     Branch(TrieNode),
 }
 
-fn validate_term<'a>(term: &'a str, at: usize) -> Result<(), TermWarning<'a>> {
+fn validate_term(term: &'_ str, at: usize) -> Result<(), TermWarning<'_>> {
     if term.len() > 9 {
         return Err(TermWarning::TooLong { term, at });
     }
@@ -54,15 +54,15 @@ fn validate_term<'a>(term: &'a str, at: usize) -> Result<(), TermWarning<'a>> {
 fn validate_terms<'a>(
     terms: &[&'a str],
 ) -> (Vec<&'a str>, Vec<TermWarning<'a>>) {
-    let mut terms = terms.into_iter().zip(0usize..).collect::<Vec<_>>();
-    terms.sort_unstable_by(|a, b| a.0.len().cmp(&b.0.len()));
+    let mut terms = terms.iter().enumerate().collect::<Vec<_>>();
+    terms.sort_unstable_by_key(|a| a.1.len());
 
     let mut prev_valid = "\0";
     let mut prev_valid_i = 0;
     let mut warnings = Vec::new();
     let mut valid_terms = Vec::with_capacity(terms.len());
-    for (term, at) in terms.into_iter() {
-        if term.len() == 0 { continue }
+    for (at, term) in terms.into_iter() {
+        if term.is_empty() { continue }
         if let Err(w) = validate_term(term, at) {
             warnings.push(w);
             continue;
@@ -141,16 +141,16 @@ impl TrieNode {
             let node = queue.pop_front();
             match node {
                 Some((index, Self(children))) => {
-                    for (child_opt, offset) in children.into_iter().zip(0..) {
+                    for (i, child_opt) in children.into_iter().enumerate() {
                         match child_opt {
                             TrieNodeOpt::Nil => {}
                             TrieNodeOpt::Leaf => {
-                                result[index + offset] = 1;
+                                result[index + i] = 1;
                             }
                             TrieNodeOpt::Branch(child_node) => {
                                 let child_index = result.len();
                                 let idiff = child_index - index;
-                                result[index + offset] = idiff as u32 / 36 + 1;
+                                result[index + i] = idiff as u32 / 36 + 1;
                                 result.extend_from_slice(&[0; 36]);
                                 queue.push_back((child_index, child_node));
                             }

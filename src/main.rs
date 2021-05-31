@@ -31,12 +31,13 @@ fn digest(data: &[u8]) -> [u8; 32] {
 }
 
 fn make_address_byte(byte: u8) -> char {
-    match byte / 7 {
-        byte @ 0..=9 => (byte + '0' as u8) as char,
-        byte @ 10..=35 => (byte + 'a' as u8 - 10) as char,
-        36 => 'e',
+    let res_byte = match byte / 7 {
+        byte @ 0..=9 => byte + b'0',
+        byte @ 10..=35 => byte + b'a' - 10,
+        36 => b'e',
         _ => unreachable!(),
-    }
+    };
+    res_byte as char
 }
 
 /// Makes a Krist v2 address from a private key.
@@ -45,8 +46,8 @@ fn make_v2_address(pkey: &[u8]) -> String {
     let mut stick = digest(&digest(pkey));
     let mut v2 = String::from("k");
 
-    for i in 0..9 {
-        protein[i] = Some(stick[0]);
+    for byte in protein.iter_mut() {
+        *byte = Some(stick[0]);
         stick = digest(&digest(&stick));
     }
 
@@ -92,11 +93,10 @@ fn get_all_devices() -> Vec<Device> {
 fn print_all_devices() {
     let devices = get_all_devices();
     println!("Found {} devices", devices.len());
-    for i in 0..devices.len() {
+    for (i, device) in devices.iter().enumerate() {
         let mut buffer = String::new();
         buffer += &format!("Device {}:\n", i);
-        
-        let device = devices[i];
+
         match device.name() {
             Ok(name) => {
                 buffer += &format!("\tName: {}\n", name);
@@ -127,9 +127,9 @@ fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
     } else {
         arguments.sort_unstable();
         all_devices.into_iter()
-            .zip(0..)
-            .filter(|di| arguments.binary_search(&di.1).is_ok())
-            .map(|di| di.0)
+            .enumerate()
+            .filter(|id| arguments.binary_search(&id.0).is_ok())
+            .map(|id| id.1)
             .collect()
     };
 
@@ -160,14 +160,14 @@ fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
     println!("Starting miners...");
     let (tx, rx) = mpsc::channel();
     let mut miners = Vec::new();
-    for i in 0..devices.len() {
+    for (i, device) in devices.into_iter().enumerate() {
         let mut entropy = [0_u8; 16];
         getrandom::getrandom(&mut entropy)?;
         let miner = Miner::new(
             &entropy,
             &trie_encoded,
             i,
-            devices[i],
+            device,
             tx.clone(),
         );
         let miner = match miner {
@@ -180,7 +180,7 @@ fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
         miners.push(miner);
     }
     let mut hash_rates = Vec::new();
-    for (mut miner, i) in miners.into_iter().zip(0..) {
+    for (i, mut miner) in miners.into_iter().enumerate() {
         thread::spawn(move || {
             if let Err(e) = miner.mine() {
                 warn!("Miner {} has errored: {}", i, e);
@@ -228,13 +228,11 @@ fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
         // Compute and format hash rate
         // Average each miner's rate if there's more than 1, use rate from last loop if there's none
         let mut total_hash_rate = 0_f64;
-        for i in 0..hash_rates.len() {
-            if hash_rates[i].len() != 0 {
-                let mut miner_hr = 0_f64;
-                for hr in hash_rates[i].iter() {
-                    miner_hr += *hr;
-                }
-                total_hash_rate += miner_hr / hash_rates[i].len() as f64;
+        for hash_rate in hash_rates.iter() {
+            if !hash_rate.is_empty() {
+                let sum: f64 = hash_rate.iter().sum();
+                let len = hash_rate.len() as f64;
+                total_hash_rate += sum / len;
             }
         }
         if total_hash_rate > 1E9 {
@@ -309,11 +307,9 @@ pub fn main() -> anyhow::Result<()> {
                 .multiple(true)
                 .use_delimiter(true)
                 .validator(|arg| {
-                    if let Err(_) = arg.parse::<usize>() {
-                        Err("must be a nonnegative integer".into())
-                    } else {
-                        Ok(())
-                    }
+                    arg.parse::<usize>()
+                        .map(|_| ())
+                        .map_err(|_| "must be a nonnegative integer".into())
                 })));
     let matches = app.clone().get_matches();
 

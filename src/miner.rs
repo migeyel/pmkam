@@ -21,7 +21,7 @@ pub struct Miner {
 impl Miner {
     pub fn new(
         entropy: &[u8; 16],
-        trie: &Vec<u32>,
+        trie: &[u32],
         id: usize,
         device: Device,
         tx: Sender<(usize, Option<Vec<u8>>, f64)>
