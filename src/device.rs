@@ -19,6 +19,21 @@ impl Device {
         Ok(res)
     }
 
+    pub fn select(mut selection: Vec<usize>) -> anyhow::Result<Vec<Self>> {
+        let all_devices = Device::list_all()?;
+        let devices = if selection.is_empty() {
+            all_devices
+        } else {
+            selection.sort_unstable();
+            all_devices.into_iter()
+                .enumerate()
+                .filter(|id| selection.binary_search(&id.0).is_ok())
+                .map(|id| id.1)
+                .collect()
+        };
+        Ok(devices)
+    }
+
     pub fn name(&self) -> anyhow::Result<String> {
         self.device.name().map_err(|e| anyhow!(e))
     }

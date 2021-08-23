@@ -3,21 +3,21 @@ mod miner;
 mod device;
 
 use device::Device;
-use std::fs::{self, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::time::{Instant, Duration};
 use sha2::{Sha256, Digest};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use clap::{App, Arg, SubCommand, crate_version, crate_authors, crate_description};
 use trie::TrieNode;
 use miner::Miner;
+use rand::{rngs::OsRng, RngCore};
 use anyhow::anyhow;
 
 const TERMS_PATH: &str = "terms.txt";
 const SOLUTIONS_PATH: &str = "solutions.txt";
 const PRINT_HASH_RATE_INTERVAL: f64 = 1_f64;
-const AVERAGE_HASHRATE_ITER_COUNT: usize = 10_usize;
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter()
@@ -69,29 +69,14 @@ fn make_v2_address(pkey: &[u8]) -> String {
 
 macro_rules! warn {
     ($($arg:tt)*) => {
-        eprintln!("Warning: {}", format!($($arg)*));
+        eprintln!("Warning: {}", format!($($arg)*))
     }
 }
 
-fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
-    let all_devices = Device::list_all()?;
-    let devices = if arguments.is_empty() {
-        all_devices
-    } else {
-        arguments.sort_unstable();
-        all_devices.into_iter()
-            .enumerate()
-            .filter(|id| arguments.binary_search(&id.0).is_ok())
-            .map(|id| id.1)
-            .collect()
-    };
+fn mine(selection: Vec<usize>) -> anyhow::Result<()> {
+    let devices = Device::select(selection)?;
 
-    let terms = fs::read_to_string(TERMS_PATH)
-        .map_err(|e| anyhow!("Could not read {}: {}", TERMS_PATH, e))?;
-    let lines = terms.lines()
-        .map(|l| l.trim().to_string())
-        .collect::<Vec<_>>();
-    let (trie, warnings) = TrieNode::from_terms(lines);
+    let (trie, warnings) = TrieNode::from_file(TERMS_PATH)?;
     for warning in warnings.iter() {
         warn!("{}", warning);
     }
@@ -99,44 +84,31 @@ fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
     println!("Term tree size: {} Bytes", trie_encoded.len() * 4);
 
     // Present devices
-    println!("Using {} devices:", devices.len());
     for device in devices.iter() {
-        if let Ok(name) = device.name() {
-            println!("\tUsing device: {}", name);
-        }
+        println!("Using device: {}", device.name()?);
     }
 
     // Make miners
     println!("Starting miners...");
+    let trie = Arc::new(trie_encoded);
     let (tx, rx) = mpsc::channel();
-    let mut miners = Vec::new();
+    let mut hash_rates = vec![0.0; devices.len()];
     for (i, device) in devices.into_iter().enumerate() {
-        let mut entropy = [0_u8; 16];
-        getrandom::getrandom(&mut entropy)?;
-        let miner = Miner::new(
-            &entropy,
-            &trie_encoded,
-            i,
-            device,
-            tx.clone(),
-        );
-        let miner = match miner {
-            Ok(miner) => miner,
-            Err(e) => {
-                warn!("Could not build miner #{}: {}", i, e);
-                continue;
-            }
-        };
-        miners.push(miner);
-    }
-    let mut hash_rates = Vec::new();
-    for (i, mut miner) in miners.into_iter().enumerate() {
+        let tx = tx.clone();
+        let trie = trie.clone();
         thread::spawn(move || {
-            if let Err(e) = miner.mine() {
-                warn!("Miner {} has errored: {}", i, e);
+            let mut entropy = [0_u8; 16];
+            OsRng.fill_bytes(&mut entropy);
+
+            match Miner::new(&entropy, &trie, i, device, tx.clone()) {
+                Ok(mut miner) => {
+                    if let Err(e) = miner.mine() {
+                        warn!("Miner {} has errored: {}", i, e);
+                    }
+                }
+                Err(e) => warn!("Could not build miner {}: {}", i, e),
             }
         });
-        hash_rates.push(vec![0_f64]);
     }
 
     let mut solutions_file = OpenOptions::new()
@@ -152,14 +124,8 @@ fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
         // Fetch results from miner threads
         let mut solutions = Vec::new();
         let results = rx.try_iter();
-        for result in results {
-            let (id, pkey, hash_rate) = result;
-
-            hash_rates[id].push(hash_rate);
-            if hash_rates[id].len() > AVERAGE_HASHRATE_ITER_COUNT {
-                hash_rates[id].remove(0);
-            }
-
+        for (id, pkey, hash_rate) in results {
+            hash_rates[id] = hash_rate;
             if let Some(pkey) = pkey {
                 solutions.push(pkey);
             }
@@ -176,15 +142,7 @@ fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
         info_buffer += &format!("{:>3} Solutions Found | ", num_solutions);
 
         // Compute and format hash rate
-        // Average each miner's rate if there's more than 1, use rate from last loop if there's none
-        let mut total_hash_rate = 0_f64;
-        for hash_rate in hash_rates.iter() {
-            if !hash_rate.is_empty() {
-                let sum: f64 = hash_rate.iter().sum();
-                let len = hash_rate.len() as f64;
-                total_hash_rate += sum / len;
-            }
-        }
+        let total_hash_rate = hash_rates.iter().fold(0.0, |a, b| a + b);
         if total_hash_rate > 1E9 {
             info_buffer += &format!("{:>6.3} GA/s", total_hash_rate / 1E9);
         } else if total_hash_rate > 1E6 {

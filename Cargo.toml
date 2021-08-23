@@ -9,7 +9,7 @@ license = "GPL-3.0-or-later"
 [dependencies]
 ocl = "0.19.3"
 ocl-extras = "0.1.1"
-getrandom = "0.1.14"
+rand = "0.8.4"
 sha2 = "0.9.1"
 clap = "2.33.3"
 anyhow = "1.0.40"

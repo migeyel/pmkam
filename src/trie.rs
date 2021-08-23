@@ -1,4 +1,5 @@
-use std::{collections::VecDeque, fmt::Display};
+use std::{collections::VecDeque, fmt::Display, fs};
+use anyhow::anyhow;
 
 #[derive(Debug)]
 pub enum TermWarning {
@@ -128,6 +129,15 @@ impl TrieNode {
         }
 
         (trie, warnings)
+    }
+
+    pub fn from_file(path: &str) -> anyhow::Result<(Self, Vec<TermWarning>)> {
+        let terms = fs::read_to_string(path)
+            .map_err(|e| anyhow!("Could not open {}: {}", path, e))?
+            .lines()
+            .map(|line| line.trim().to_string())
+            .collect::<Vec<_>>();
+        Ok(Self::from_terms(terms))
     }
 
     pub fn encode(self) -> Vec<u32> {
