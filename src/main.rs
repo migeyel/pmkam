@@ -89,9 +89,9 @@ fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
     let terms = fs::read_to_string(TERMS_PATH)
         .map_err(|e| anyhow!("Could not read {}: {}", TERMS_PATH, e))?;
     let lines = terms.lines()
-        .map(|l| l.trim())
+        .map(|l| l.trim().to_string())
         .collect::<Vec<_>>();
-    let (trie, warnings) = TrieNode::from_terms(&lines);
+    let (trie, warnings) = TrieNode::from_terms(lines);
     for warning in warnings.iter() {
         warn!("{}", warning);
     }

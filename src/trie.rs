@@ -1,13 +1,13 @@
 use std::{collections::VecDeque, fmt::Display};
 
 #[derive(Debug)]
-pub enum TermWarning<'a> {
-    InvalidChar { term: &'a str, at: usize, ch: char },
-    TooLong { term: &'a str, at: usize },
-    Duplicate { term: &'a str, at: usize, orig: &'a str, orig_at: usize },
+pub enum TermWarning {
+    InvalidChar { term: String, at: usize, ch: char },
+    TooLong { term: String, at: usize },
+    Duplicate { term: String, at: usize, orig: String, orig_at: usize },
 }
 
-impl Display for TermWarning<'_> {
+impl Display for TermWarning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidChar { term, at, ch } => write!(
@@ -33,7 +33,7 @@ enum TrieNodeOpt {
     Branch(TrieNode),
 }
 
-fn validate_term(term: &'_ str, at: usize) -> Result<(), TermWarning<'_>> {
+fn validate_term(term: String, at: usize) -> Result<(), TermWarning> {
     if term.len() > 9 {
         return Err(TermWarning::TooLong { term, at });
     }
@@ -51,9 +51,7 @@ fn validate_term(term: &'_ str, at: usize) -> Result<(), TermWarning<'_>> {
     Ok(())
 }
 
-fn validate_terms<'a>(
-    terms: &[&'a str],
-) -> (Vec<&'a str>, Vec<TermWarning<'a>>) {
+fn validate_terms(terms: Vec<String>) -> (Vec<String>, Vec<TermWarning>) {
     let mut terms = terms.iter().enumerate().collect::<Vec<_>>();
     terms.sort_unstable_by_key(|a| a.1.len());
 
@@ -63,21 +61,21 @@ fn validate_terms<'a>(
     let mut valid_terms = Vec::with_capacity(terms.len());
     for (at, term) in terms.into_iter() {
         if term.is_empty() { continue }
-        if let Err(w) = validate_term(term, at) {
+        if let Err(w) = validate_term(term.clone(), at) {
             warnings.push(w);
             continue;
         }
         if term.starts_with(prev_valid) {
             warnings.push(TermWarning::Duplicate {
-                term,
+                term: term.clone(),
                 at,
-                orig: prev_valid,
+                orig: prev_valid.to_string(),
                 orig_at: prev_valid_i,
             });
             continue;
         }
 
-        valid_terms.push(*term);
+        valid_terms.push(term.clone());
         prev_valid = term;
         prev_valid_i = at;
     }
@@ -114,7 +112,7 @@ impl TrieNode {
         }
     }
 
-    pub fn from_terms<'a>(terms: &[&'a str]) -> (Self, Vec<TermWarning<'a>>) {
+    pub fn from_terms(terms: Vec<String>) -> (Self, Vec<TermWarning>) {
         let mut trie = Self::new();
         let (valid_terms, warnings) = validate_terms(terms);
         for term in valid_terms {
