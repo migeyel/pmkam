@@ -1,5 +1,6 @@
+use crate::device::Device;
 use std::{sync::mpsc::Sender, time::Instant};
-use ocl::{Buffer, Device, Kernel, MemFlags, ProQue, SpatialDims, core::{DeviceInfo, DeviceInfoResult}};
+use ocl::{Buffer, Kernel, MemFlags, ProQue, SpatialDims, core::{DeviceInfo, DeviceInfoResult}};
 use anyhow::anyhow;
 
 const THREAD_ITER: usize = 4096;
@@ -27,7 +28,7 @@ impl Miner {
         tx: Sender<(usize, Option<Vec<u8>>, f64)>
     ) -> anyhow::Result<Self> {
         // Get local work size from device
-        let local_size = device.info(DeviceInfo::MaxWorkGroupSize)
+        let local_size = device.device.info(DeviceInfo::MaxWorkGroupSize)
             .map_err(|e| anyhow!(e))?;
         let local_size = match local_size {
             DeviceInfoResult::MaxWorkGroupSize(local_size) => local_size,
@@ -36,7 +37,8 @@ impl Miner {
 
         // Build ProQue
         let pq_ocl = ProQue::builder()
-            .device(device)
+            .platform(device.platform)
+            .device(device.device)
             .src(KERNEL_SRC)
             .build()
             .map_err(|e| anyhow!(e))?;

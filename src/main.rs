@@ -1,9 +1,10 @@
 mod trie;
 mod miner;
+mod device;
 
-use std::fs::{File, OpenOptions};
+use device::Device;
+use std::fs::{self, OpenOptions};
 use std::io::prelude::*;
-use ocl::{Platform, Device};
 use std::time::{Instant, Duration};
 use sha2::{Sha256, Digest};
 use std::sync::mpsc;
@@ -72,56 +73,8 @@ macro_rules! warn {
     }
 }
 
-fn get_all_devices() -> Vec<Device> {
-    let mut result = Vec::new();
-    for platform in Platform::list().iter() {
-        match Device::list_all(platform) {
-            Ok(platform_devices) => {
-                for device in platform_devices.into_iter() {
-                    result.push(device);
-                }
-            }
-            Err(e) => {
-                warn!("Could not load devices: {}", e);
-                continue;
-            }
-        }
-    }
-    result
-}
-
-fn print_all_devices() {
-    let devices = get_all_devices();
-    println!("Found {} devices", devices.len());
-    for (i, device) in devices.iter().enumerate() {
-        let mut buffer = String::new();
-        buffer += &format!("Device {}:\n", i);
-
-        match device.name() {
-            Ok(name) => {
-                buffer += &format!("\tName: {}\n", name);
-            },
-            Err(e) => {
-                warn!("Could not load name for device {}: {}", i, e);
-                continue;
-            }
-        }
-        match device.vendor() {
-            Ok(vendor) => {
-                buffer += &format!("\tVendor: {}\n", vendor);
-            },
-            Err(e) => {
-                warn!("Could not load vendor for device #{}: {}", i, e);
-                continue;
-            }
-        }
-
-        print!("{}", buffer);
-    }
-}
-
 fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
-    let all_devices = get_all_devices();
+    let all_devices = Device::list_all()?;
     let devices = if arguments.is_empty() {
         all_devices
     } else {
@@ -133,12 +86,9 @@ fn mine(mut arguments: Vec<usize>) -> anyhow::Result<()> {
             .collect()
     };
 
-    let mut terms = File::open(TERMS_PATH)
-        .map_err(|e| anyhow!("Could not open {}: {}", TERMS_PATH, e))?;
-    let mut terms_string = String::new();
-    terms.read_to_string(&mut terms_string)
+    let terms = fs::read_to_string(TERMS_PATH)
         .map_err(|e| anyhow!("Could not read {}: {}", TERMS_PATH, e))?;
-    let lines = terms_string.lines()
+    let lines = terms.lines()
         .map(|l| l.trim())
         .collect::<Vec<_>>();
     let (trie, warnings) = TrieNode::from_terms(&lines);
@@ -314,7 +264,12 @@ pub fn main() -> anyhow::Result<()> {
     let matches = app.clone().get_matches();
 
     match matches.subcommand() {
-        ("list", _) => print_all_devices(),
+        ("list", _) => {
+            for (i, device) in Device::list_all()?.iter().enumerate() {
+                let name = device.name().map_err(|e| anyhow!(e))?;
+                println!("{}: {}", i, name);
+            }
+        },
         ("mine", Some(matches)) => {
             let values = matches.values_of("devices")
                 .unwrap_or_default()
