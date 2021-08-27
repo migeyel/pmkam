@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, fmt::Display, fs};
 use anyhow::anyhow;
 
+/// A warning about how a term has been ignored.
 #[derive(Debug)]
 pub enum TermWarning {
     InvalidChar { term: String, at: usize, ch: char },
@@ -34,6 +35,7 @@ enum TrieNodeOpt {
     Branch(TrieNode),
 }
 
+/// Checks that a term is not too long and contains only valid chars.
 fn validate_term(term: String, at: usize) -> Result<(), TermWarning> {
     if term.len() > 9 {
         return Err(TermWarning::TooLong { term, at });
@@ -52,15 +54,22 @@ fn validate_term(term: String, at: usize) -> Result<(), TermWarning> {
     Ok(())
 }
 
+/// Filters a list of terms such that:
+/// - No term is empty.
+/// - No term is too long.
+/// - No term contains invalid chars.
+/// - No term is a prefix of another term.
+///
+/// Returns a list of [TermWarning]s for the terms that has been filtered out.
 fn validate_terms(terms: Vec<String>) -> (Vec<String>, Vec<TermWarning>) {
-    let mut terms = terms.iter().enumerate().collect::<Vec<_>>();
-    terms.sort_unstable_by_key(|a| a.1.len());
+    let mut at_terms = terms.iter().enumerate().collect::<Vec<_>>();
+    at_terms.sort_unstable_by_key(|a| a.1.len());
 
     let mut prev_valid = "\0";
     let mut prev_valid_i = 0;
     let mut warnings = Vec::new();
-    let mut valid_terms = Vec::with_capacity(terms.len());
-    for (at, term) in terms.into_iter() {
+    let mut valid_terms = Vec::with_capacity(at_terms.len());
+    for (at, term) in at_terms.into_iter() {
         if term.is_empty() { continue }
         if let Err(w) = validate_term(term.clone(), at) {
             warnings.push(w);
@@ -84,6 +93,7 @@ fn validate_terms(terms: Vec<String>) -> (Vec<String>, Vec<TermWarning>) {
     (valid_terms, warnings)
 }
 
+/// A node of a 36-ary trie.
 #[derive(Debug, Clone)]
 pub struct TrieNode(Vec<TrieNodeOpt>);
 
@@ -92,6 +102,11 @@ impl TrieNode {
         Self(vec![TrieNodeOpt::Nil; 36])
     }
 
+    /// Inserts a child following branches down the given path.
+    ///
+    /// Panics on:
+    /// - An empty path.
+    /// - If the path is a prefix of an already existing path.
     fn insert(&mut self, path: &[usize]) {
         assert_ne!(path.len(), 0, "validation failed to remove empty terms");
         let child_opt = &mut self.0[path[0]];
@@ -113,6 +128,10 @@ impl TrieNode {
         }
     }
 
+    /// Given a list of terms, validates them and transforms them into a trie
+    /// following the address -> path byte form on the cl kernel.
+    ///
+    /// Returns a list of [TermWarning]s for terms that failed validation.
     pub fn from_terms(terms: Vec<String>) -> (Self, Vec<TermWarning>) {
         let mut trie = Self::new();
         let (valid_terms, warnings) = validate_terms(terms);
@@ -131,6 +150,7 @@ impl TrieNode {
         (trie, warnings)
     }
 
+    /// Given a file path with terms as lines, validates and generates a trie.
     pub fn from_file(path: &str) -> anyhow::Result<(Self, Vec<TermWarning>)> {
         let terms = fs::read_to_string(path)
             .map_err(|e| anyhow!("Could not open {}: {}", path, e))?
@@ -140,6 +160,14 @@ impl TrieNode {
         Ok(Self::from_terms(terms))
     }
 
+    /// Encodes a trie into a u32 vector.
+    ///
+    /// Each node is represented by 36 integers, one for each branch:
+    /// - `0` means the branch is empty.
+    /// - `1` means the branch leads to a leaf.
+    /// - `x > 1` means the branch leads to the `x - 1`th node after them.
+    ///
+    /// Encoding is performed breadth-first using a queue.
     pub fn encode(self) -> Vec<u32> {
         let mut result = vec![0; 36];
         let mut queue = VecDeque::new();
@@ -148,7 +176,7 @@ impl TrieNode {
         loop {
             let node = queue.pop_front();
             match node {
-                Some((index, Self(children))) => {
+                Some((index, TrieNode(children))) => {
                     for (i, child_opt) in children.into_iter().enumerate() {
                         match child_opt {
                             TrieNodeOpt::Nil => {}
@@ -157,8 +185,8 @@ impl TrieNode {
                             }
                             TrieNodeOpt::Branch(child_node) => {
                                 let child_index = result.len();
-                                let idiff = child_index - index;
-                                result[index + i] = idiff as u32 / 36 + 1;
+                                let diff = (child_index - index) / 36;
+                                result[index + i] = diff as u32 + 1;
                                 result.extend_from_slice(&[0; 36]);
                                 queue.push_back((child_index, child_node));
                             }
