@@ -28,16 +28,6 @@ typedef union UINT {
 #define SIG0(x) (RR((x), 7) ^ RR((x), 18) ^ ((x) >> 3))
 #define SIG1(x) (RR((x), 17) ^ RR((x), 19) ^ ((x) >> 10))
 
-// sha256 initial hash values
-#define H0 0x6a09e667
-#define H1 0xbb67ae85
-#define H2 0x3c6ef372
-#define H3 0xa54ff53a
-#define H4 0x510e527f
-#define H5 0x9b05688c
-#define H6 0x1f83d9ab
-#define H7 0x5be0cd19
-
 // sha256 round constants
 __constant uint K[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -65,30 +55,27 @@ __constant uint K2[64] = {
 
 // perform a single round of sha256 transformation on the given data
 inline void sha256_transform(UINT m[64], UINT H[8]) {
-    int i;
-    uint a, b, c, d, e, f, g, h, t1, t2;
-
-#pragma unroll
-    for (i = 16; i < 64; i++) {
+    #pragma unroll
+    for (int i = 16; i < 64; i++) {
         m[i].i = SIG1(m[i - 2].i)
             + m[i - 7].i
             + SIG0(m[i - 15].i)
             + m[i - 16].i;
     }
 
-    a = H[0].i;
-    b = H[1].i;
-    c = H[2].i;
-    d = H[3].i;
-    e = H[4].i;
-    f = H[5].i;
-    g = H[6].i;
-    h = H[7].i;
+    uint a = H[0].i;
+    uint b = H[1].i;
+    uint c = H[2].i;
+    uint d = H[3].i;
+    uint e = H[4].i;
+    uint f = H[5].i;
+    uint g = H[6].i;
+    uint h = H[7].i;
 
-#pragma unroll
-    for (i = 0; i < 64; i++) {
-        t1 = h + EP1(e) + CH(e, f, g) + K[i] + m[i].i;
-        t2 = EP0(a) + MAJ(a, b, c);
+    #pragma unroll
+    for (int i = 0; i < 64; i++) {
+        uint t1 = h + EP1(e) + CH(e, f, g) + K[i] + m[i].i;
+        uint t2 = EP0(a) + MAJ(a, b, c);
         h = g;
         g = f;
         f = e;
@@ -112,22 +99,19 @@ inline void sha256_transform(UINT m[64], UINT H[8]) {
 // perform a single round of sha256 transformation on the second block of a
 // 64-byte message
 inline void sha256_transform2(UINT H[8]) {
-    int i;
-    uint a, b, c, d, e, f, g, h, t1, t2;
+    uint a = H[0].i;
+    uint b = H[1].i;
+    uint c = H[2].i;
+    uint d = H[3].i;
+    uint e = H[4].i;
+    uint f = H[5].i;
+    uint g = H[6].i;
+    uint h = H[7].i;
 
-    a = H[0].i;
-    b = H[1].i;
-    c = H[2].i;
-    d = H[3].i;
-    e = H[4].i;
-    f = H[5].i;
-    g = H[6].i;
-    h = H[7].i;
-
-#pragma unroll
-    for (i = 0; i < 64; i++) {
-        t1 = h + EP1(e) + CH(e, f, g) + K2[i];
-        t2 = EP0(a) + MAJ(a, b, c);
+    #pragma unroll
+    for (int i = 0; i < 64; i++) {
+        uint t1 = h + EP1(e) + CH(e, f, g) + K2[i];
+        uint t2 = EP0(a) + MAJ(a, b, c);
         h = g;
         g = f;
         f = e;
@@ -151,19 +135,16 @@ inline void sha256_transform2(UINT H[8]) {
 // sha256 digest of exactly 64 bytes of input
 // UINT data[64] - input bytes - will be modified
 // UINT hash[8] - output bytes - will be modified
-// TODO: Check all comments before release
 inline void digest64(UINT data[64], UINT hash[8]) {
-    // init hash state
-    hash[0].i = H0;
-    hash[1].i = H1;
-    hash[2].i = H2;
-    hash[3].i = H3;
-    hash[4].i = H4;
-    hash[5].i = H5;
-    hash[6].i = H6;
-    hash[7].i = H7;
+    hash[0].i = 0x6a09e667;
+    hash[1].i = 0xbb67ae85;
+    hash[2].i = 0x3c6ef372;
+    hash[3].i = 0xa54ff53a;
+    hash[4].i = 0x510e527f;
+    hash[5].i = 0x9b05688c;
+    hash[6].i = 0x1f83d9ab;
+    hash[7].i = 0x5be0cd19;
 
-    // transform twice
     sha256_transform(data, hash);
     sha256_transform2(hash);
 }
@@ -171,14 +152,11 @@ inline void digest64(UINT data[64], UINT hash[8]) {
 // Address miner
 
 #define THREAD_ITER 4096 // How many addresses each work unit checks
-#define CHAIN_SIZE (16 * 8) // 16 stored iterations with 8 bytes each
-#define MAX_CHAIN_ITER 16 // The max amout of iterations the check_address function does before giving up.
-                          // Must not be greater than CHAIN_SIZE / 8. (otherwise false positives will happen without any other benefit).
-                          // A max chain iter of n means a failure probability of at most (7/9)^n per address checked.
+#define CHAIN_SIZE 32
 
 // Converts a sha256 hash to hexadecimal
 inline void hash_to_hex(const UINT hash[8], UINT hex[64]) {    
-#pragma unroll
+    #pragma unroll
     for (int i = 0; i < 16; i += 2) {
         uchar h, h1, h2;
 
@@ -218,7 +196,7 @@ inline void hash_to_hex(const UINT hash[8], UINT hex[64]) {
 // 251  | z     | 35
 // 252  | e     | 14
 // 255  | e     | 14
-inline uchar make_address_byte_s(uchar byte) {
+inline uchar addr_byte(uchar byte) {
     uchar byte_div_7 = byte / 7;
     if (byte_div_7 == 36) {
         return 14;
@@ -249,7 +227,7 @@ inline uchar make_address_byte_s(uchar byte) {
 typedef struct HASH_CHAIN_T {
     UINT last_hash[8];
     uint chain_start;
-    uchar chain[CHAIN_SIZE];
+    uchar chain[CHAIN_SIZE * 8];
     uchar protein[18];
     uint protein_start;
 } HASH_CHAIN_T;
@@ -264,22 +242,22 @@ inline void shift_chain(HASH_CHAIN_T *chain) {
     hash_to_hex(chain->last_hash, hash_hex);
     digest64(hash_hex, chain->last_hash);
 
-    chain->protein[chain->protein_start] = make_address_byte_s(
-        chain->chain[chain->chain_start]
-    );
+    chain->protein[chain->protein_start] = addr_byte(chain->chain[chain->chain_start]);
     chain->protein_start = (chain->protein_start + 1) % 18;
 
-#pragma unroll
+    #pragma unroll
     for (int i = 0; i < 8; i++) {
         chain->chain[chain->chain_start + i] = UINT_BYTE_BE(chain->last_hash[i / 4], i % 4);
     }
-    chain->chain_start = (chain->chain_start + 8) % CHAIN_SIZE;
+    chain->chain_start = (chain->chain_start + 8) % (CHAIN_SIZE * 8);
 }
 
-// 0 - Dead end
-// 1 - There are valid prefixes
-// 2 - There is a full term that matches this
-inline int iter_prefix_search(const uchar addr_char, uint* index, __global const uint *trie) {
+// Goes down the trie branch at *index on char addr_char.
+// Sets *index to the child index and returns:
+// 0: If there is no child (i.e. no terms match the trie path)
+// 1: If the child is not a leaf (i.e. some term shares a prefix with the path)
+// 2: If the child is a leaf (i.e. a term matches the path exactly)
+inline int down_branch(const uchar addr_char, uint* index, __global const uint *trie) {
     uint trie_data;
 
     trie_data = trie[*index + addr_char];
@@ -294,24 +272,29 @@ inline int iter_prefix_search(const uchar addr_char, uint* index, __global const
     }
 }
 
-// Given a hash chain, uses its information to generate an address without hashing anything
-// such that the resulting address' pkey can be found from the seed that constructed the hash chain
+// Returns whether the address generated by the hash chain matches some term in
+// the given term trie.
 inline bool check_address(const HASH_CHAIN_T *chain,__global const uint *trie) {
     uint chain_index = chain->chain_start;
     uint link;
     uint iter = 0;
     uchar v2[9];
 
+    // Krist address loop.
+    // Using chain->chain for permutation indexes and chain->protein for the
+    // already computed protein.
+    // Going down the term trie as the chars are generated, so it can exit early
+    // on a dead end or full match.
     int i = 0;
     uint trie_index = 0;
     bool used_protein[9] = {};
-    while (i < 8 && iter < MAX_CHAIN_ITER) {
+    while (i < 8) {
         link = chain->chain[chain_index + i] % 9;
         if (!used_protein[link]) {
             v2[i] = chain->protein[(chain->protein_start + 2 * link) % 18];
             used_protein[link] = true;
 
-            int found = iter_prefix_search(v2[i], &trie_index, trie);
+            int found = down_branch(v2[i], &trie_index, trie);
             switch (found) {
                 case 0:
                     return false;
@@ -322,29 +305,28 @@ inline bool check_address(const HASH_CHAIN_T *chain,__global const uint *trie) {
                     return true;
             }
         } else {
-            chain_index = (chain_index + 8) % CHAIN_SIZE;
+            chain_index = (chain_index + 8) % (CHAIN_SIZE * 8);
             iter++;
+            if (iter >= CHAIN_SIZE) {
+                return false;
+            }
         }
     }
 
-    if (iter >= MAX_CHAIN_ITER) {
-        return 0;
-    }
-
     // Put in last char in the address
-#pragma unroll
-    for (i = 0; i < 9; i++) {
+    #pragma unroll
+    for (int i = 0; i < 9; i++) {
         if (!used_protein[i]) {
             v2[8] = chain->protein[(chain->protein_start + 2 * i) % 18];
             break;
         }
     }
 
-    return iter_prefix_search(v2[8], &trie_index, trie) == 2;
+    return down_branch(v2[8], &trie_index, trie) == 2;
 }
 
 __kernel void mine(
-    __constant const uchar *entropy,      // 10 bytes
+    __constant const uchar *entropy,      // 16 bytes
     __global const uint *trie,            // Variable size
     const ulong nonce,
     __global uchar *solved,               // 1 byte
@@ -352,19 +334,15 @@ __kernel void mine(
 ) {
     uint gid = get_global_id(0);
 
-    // Generate seed from hashing some arguments
-    uint gid_seed = gid;
-    ulong nonce_seed = nonce;
+    // Generate seed from hashing id, nonce and entropy.
     UINT seed[64] = {};
-    
-    for (int i = 0; i < 10; i++) {
+    UINT seed_hash[8];
+    for (int i = 0; i < 16; i++) {
         UINT_BYTE_BE(seed[i / 4], i % 4) = entropy[i];
     }
-    seed[3].i = gid_seed;
-    seed[4].i = nonce_seed % UINT_MAX;
-    seed[5].i = nonce_seed / UINT_MAX;
-
-    UINT seed_hash[8];
+    seed[4].i = gid;
+    seed[5].i = nonce % UINT_MAX;
+    seed[6].i = nonce / UINT_MAX;
     digest64(seed, seed_hash);
 
     // Make chain and protein
@@ -380,11 +358,10 @@ __kernel void mine(
     // Populate chain
     shift_chain(&chain); // krist's makev2address hashes the pkey twice before doing its thing
     shift_chain(&chain); // if the address from 0 or 1 was a match, we would not have the key without doing this
-
     for (int i = 1; i < 18; i++) {
         shift_chain(&chain);
     }
-    for (int i = 0; i < CHAIN_SIZE; i += 8) {
+    for (int i = 0; i < CHAIN_SIZE; i++) {
         shift_chain(&chain);
     }
 
@@ -399,8 +376,7 @@ __kernel void mine(
         shift_chain(&chain);
     }
 
-    // Re-do hashes to find proper pkey
-    // This *may* be faster to do on CPU due to higher clock frequencies
+    // Re-do hashes to reconstruct the pkey.
     if (solution_found) {
         UINT hash_byte[8];
         UINT hash_hex[64];
