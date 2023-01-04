@@ -1,6 +1,6 @@
 use crate::device::Device;
 use std::{sync::mpsc::Sender, time::Instant};
-use ocl::{Buffer, Kernel, MemFlags, ProQue, SpatialDims, core::{DeviceInfo, DeviceInfoResult}};
+use ocl::{Buffer, Kernel, MemFlags, ProQue, SpatialDims, core::{DeviceInfo, DeviceInfoResult}, builders::ProgramBuilder};
 use anyhow::anyhow;
 
 const THREAD_ITER: usize = 4096;
@@ -38,11 +38,15 @@ impl Miner {
             _ => 0.0,
         };
 
+        let mut program_builder = ProgramBuilder::new();
+        program_builder.source(KERNEL_SRC)
+            .cmplr_opt("-cl-std=CL1.2");
+
         // Build ProQue
         let pq_ocl = ProQue::builder()
             .platform(device.platform)
             .device(device.device)
-            .src(KERNEL_SRC)
+            .prog_bldr(program_builder)
             .build()
             .map_err(|e| anyhow!(e))?;
 
