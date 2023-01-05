@@ -7,6 +7,7 @@ pub enum TermWarning {
     InvalidChar { term: String, at: usize, ch: char },
     TooLong { term: String, at: usize },
     Duplicate { term: String, at: usize, orig: String, orig_at: usize },
+    TooManyKs { example: String },
 }
 
 impl Display for TermWarning {
@@ -24,6 +25,12 @@ impl Display for TermWarning {
                 f, "term {} ({}) is already covered by term {} ({})",
                 at + 1, term, orig_at + 1, orig,
             ),
+            Self::TooManyKs { example } => write!(
+                f, "all your terms start with 'k'. Do you not know that \
+                putting '{}' means searching for k{}, or do you just really \
+                like the letter k?",
+                example, example
+            )
         }
     }
 }
@@ -62,12 +69,16 @@ fn validate_term(term: String, at: usize) -> Result<(), TermWarning> {
 ///
 /// Returns a list of [TermWarning]s for the terms that has been filtered out.
 fn validate_terms(terms: Vec<String>) -> (Vec<String>, Vec<TermWarning>) {
+    let mut warnings = Vec::new();
+    if terms.iter().all(|t| t.starts_with("k")) && terms.len() >= 5 {
+        warnings.push(TermWarning::TooManyKs { example: terms[0].clone() })
+    }
+
     let mut at_terms = terms.iter().enumerate().collect::<Vec<_>>();
-    at_terms.sort_unstable_by_key(|a| a.1.len());
+    at_terms.sort_unstable_by_key(|a| a.1);
 
     let mut prev_valid = "\0";
     let mut prev_valid_i = 0;
-    let mut warnings = Vec::new();
     let mut valid_terms = Vec::with_capacity(at_terms.len());
     for (at, term) in at_terms.into_iter() {
         if term.is_empty() { continue }
@@ -75,6 +86,7 @@ fn validate_terms(terms: Vec<String>) -> (Vec<String>, Vec<TermWarning>) {
             warnings.push(w);
             continue;
         }
+
         if term.starts_with(prev_valid) {
             warnings.push(TermWarning::Duplicate {
                 term: term.clone(),
@@ -108,7 +120,10 @@ impl TrieNode {
     /// - An empty path.
     /// - If the path is a prefix of an already existing path.
     fn insert(&mut self, path: &[usize]) {
-        assert_ne!(path.len(), 0, "validation failed to remove empty terms");
+        if path.is_empty() {
+            unreachable!("validation failed to remove empty terms");
+        }
+
         let child_opt = &mut self.0[path[0]];
         match child_opt {
             TrieNodeOpt::Nil => {
@@ -120,9 +135,15 @@ impl TrieNode {
                     *child_opt = TrieNodeOpt::Branch(child_node);
                 }
             },
-            TrieNodeOpt::Leaf => panic!("validation failed to deduplicate"),
+
+            TrieNodeOpt::Leaf => {
+                unreachable!("validation failed to deduplicate");
+            }
+
             TrieNodeOpt::Branch(child_node) => {
-                assert_ne!(path.len(), 1, "validation failed to deduplicate");
+                if path.len() == 1 {
+                    unreachable!("validation failed to deduplicate");
+                }
                 child_node.insert(&path[1..]);
             },
         }
