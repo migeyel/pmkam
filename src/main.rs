@@ -1,26 +1,27 @@
-mod trie;
-mod miner;
 mod device;
+mod miner;
+mod trie;
 
+use anyhow::anyhow;
+use clap::{crate_authors, crate_description, crate_version, App, Arg, SubCommand};
 use device::Device;
-use std::fs::OpenOptions;
-use std::io::prelude::*;
-use std::time::{Instant, Duration};
-use sha2::{Sha256, Digest};
-use std::sync::{Arc, mpsc};
-use std::thread;
-use clap::{App, Arg, SubCommand, crate_version, crate_authors, crate_description};
-use trie::TrieNode;
 use miner::Miner;
 use rand::{rngs::OsRng, RngCore};
-use anyhow::anyhow;
+use sha2::{Digest, Sha256};
+use std::fs::OpenOptions;
+use std::io::prelude::*;
+use std::sync::{mpsc, Arc};
+use std::thread;
+use std::time::{Duration, Instant};
+use trie::TrieNode;
 
 const TERMS_PATH: &str = "terms.txt";
 const SOLUTIONS_PATH: &str = "solutions.txt";
 const PRINT_HASH_RATE_INTERVAL: f64 = 1_f64;
 
 fn hex(bytes: &[u8]) -> String {
-    bytes.iter()
+    bytes
+        .iter()
         .fold(String::new(), |s, byte| s + &format!("{:02x}", byte))
 }
 
@@ -164,10 +165,7 @@ fn mine(selection: Vec<usize>) -> anyhow::Result<()> {
         let t_days = deaccumullator / 24;
         info_buffer += &format!(
             " | {:>2}d {:>2}h {:>2}min {:>2}sec",
-            t_days,
-            t_hours,
-            t_mins,
-            t_secs,
+            t_days, t_hours, t_mins, t_secs,
         );
 
         // Present info
@@ -204,21 +202,24 @@ pub fn main() -> anyhow::Result<()> {
         .author(crate_authors!())
         .about(crate_description!())
         .after_help(&*after_help)
-        .subcommand(SubCommand::with_name("list")
-            .about("Displays all available devices"))
-        .subcommand(SubCommand::with_name("mine")
-            .about("Mines for prefixes")
-            .arg(Arg::with_name("devices")
-                .help("Specify devices to mine with")
-                .long("devices")
-                .takes_value(true)
-                .multiple(true)
-                .use_delimiter(true)
-                .validator(|arg| {
-                    arg.parse::<usize>()
-                        .map(|_| ())
-                        .map_err(|_| "must be a nonnegative integer".into())
-                })));
+        .subcommand(SubCommand::with_name("list").about("Displays all available devices"))
+        .subcommand(
+            SubCommand::with_name("mine")
+                .about("Mines for prefixes")
+                .arg(
+                    Arg::with_name("devices")
+                        .help("Specify devices to mine with")
+                        .long("devices")
+                        .takes_value(true)
+                        .multiple(true)
+                        .use_delimiter(true)
+                        .validator(|arg| {
+                            arg.parse::<usize>()
+                                .map(|_| ())
+                                .map_err(|_| "must be a nonnegative integer".into())
+                        }),
+                ),
+        );
     let matches = app.clone().get_matches();
 
     match matches.subcommand() {
@@ -227,9 +228,10 @@ pub fn main() -> anyhow::Result<()> {
                 let name = device.name().map_err(|e| anyhow!(e))?;
                 println!("{}: {}", i, name);
             }
-        },
+        }
         ("mine", Some(matches)) => {
-            let values = matches.values_of("devices")
+            let values = matches
+                .values_of("devices")
                 .unwrap_or_default()
                 .map(|v| v.parse().unwrap())
                 .collect::<Vec<usize>>();

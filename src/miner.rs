@@ -1,7 +1,11 @@
 use crate::device::Device;
-use std::{sync::mpsc::Sender, time::Instant};
-use ocl::{Buffer, Kernel, MemFlags, ProQue, SpatialDims, core::{DeviceInfo, DeviceInfoResult}, builders::ProgramBuilder};
 use anyhow::anyhow;
+use ocl::{
+    builders::ProgramBuilder,
+    core::{DeviceInfo, DeviceInfoResult},
+    Buffer, Kernel, MemFlags, ProQue, SpatialDims,
+};
+use std::{sync::mpsc::Sender, time::Instant};
 
 const THREAD_ITER: usize = 4096;
 const DESIRED_ITER_TIME: f64 = 1_f64;
@@ -10,7 +14,7 @@ const KERNEL_SRC: &str = include_str!("kernel.cl");
 macro_rules! res {
     ($expr:expr) => {
         $expr.map_err(|e| anyhow::anyhow!(e))
-    }
+    };
 }
 
 pub struct Miner {
@@ -20,7 +24,7 @@ pub struct Miner {
     solved_buffer: Buffer<u8>,
     pkey_buffer: Buffer<u8>,
     local_size: f64,
-    tx: Sender<(usize, Option<Vec<u8>>, f64)>
+    tx: Sender<(usize, Option<Vec<u8>>, f64)>,
 }
 
 impl Miner {
@@ -29,7 +33,7 @@ impl Miner {
         trie: &[u32],
         id: usize,
         device: Device,
-        tx: Sender<(usize, Option<Vec<u8>>, f64)>
+        tx: Sender<(usize, Option<Vec<u8>>, f64)>,
     ) -> anyhow::Result<Self> {
         // Get local work size from device
         let local_size = res!(device.device.info(DeviceInfo::MaxWorkGroupSize))?;
@@ -39,7 +43,8 @@ impl Miner {
         };
 
         let mut program_builder = ProgramBuilder::new();
-        program_builder.source(KERNEL_SRC)
+        program_builder
+            .source(KERNEL_SRC)
             .cmplr_opt("-cl-std=CL1.2");
 
         // Build ProQue
@@ -83,7 +88,8 @@ impl Miner {
             .map_err(|e| anyhow!(e))?;
 
         // Build kernel
-        let kernel = pq_ocl.kernel_builder("mine")
+        let kernel = pq_ocl
+            .kernel_builder("mine")
             .global_work_size(local_size as usize)
             .arg_named("entropy", &entropy_buffer)
             .arg_named("trie", &trie_buffer)
@@ -142,7 +148,8 @@ impl Miner {
             work_size *= desired_multiplier;
             work_size = f64::round(work_size / local_size) * local_size;
             work_size = f64::max(work_size, self.local_size);
-            self.kernel.set_default_global_work_size(SpatialDims::One(work_size as usize));
+            self.kernel
+                .set_default_global_work_size(SpatialDims::One(work_size as usize));
 
             // Increment nonce
             nonce += 1;

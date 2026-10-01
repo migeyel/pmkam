@@ -1,36 +1,56 @@
-use std::{collections::VecDeque, fmt::Display, fs};
 use anyhow::anyhow;
+use std::{collections::VecDeque, fmt::Display, fs};
 
 /// A warning about how a term has been ignored.
 #[derive(Debug)]
 pub enum TermWarning {
-    InvalidChar { term: String, at: usize, ch: char },
-    TooLong { term: String, at: usize },
-    Duplicate { term: String, at: usize, orig: String, orig_at: usize },
-    TooManyKs { example: String },
+    InvalidChar {
+        term: String,
+        at: usize,
+        ch: char,
+    },
+    TooLong {
+        term: String,
+        at: usize,
+    },
+    Duplicate {
+        term: String,
+        at: usize,
+        orig: String,
+        orig_at: usize,
+    },
+    TooManyKs {
+        example: String,
+    },
 }
 
 impl Display for TermWarning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidChar { term, at, ch } => write!(
-                f, "invalid char '{}' on term {} ({})",
-                ch, at + 1, term,
-            ),
-            Self::TooLong { term, at } => write!(
-                f, "term {} ({}) is too long",
-                at + 1, term,
-            ),
-            Self::Duplicate {term, at, orig, orig_at} => write!(
-                f, "term {} ({}) is already covered by term {} ({})",
-                at + 1, term, orig_at + 1, orig,
+            Self::InvalidChar { term, at, ch } => {
+                write!(f, "invalid char '{}' on term {} ({})", ch, at + 1, term,)
+            }
+            Self::TooLong { term, at } => write!(f, "term {} ({}) is too long", at + 1, term,),
+            Self::Duplicate {
+                term,
+                at,
+                orig,
+                orig_at,
+            } => write!(
+                f,
+                "term {} ({}) is already covered by term {} ({})",
+                at + 1,
+                term,
+                orig_at + 1,
+                orig,
             ),
             Self::TooManyKs { example } => write!(
-                f, "all your terms start with 'k'. Do you not know that \
+                f,
+                "all your terms start with 'k'. Do you not know that \
                 putting '{}' means searching for k{}, or do you just really \
                 like the letter k?",
                 example, example
-            )
+            ),
         }
     }
 }
@@ -71,7 +91,9 @@ fn validate_term(term: String, at: usize) -> Result<(), TermWarning> {
 fn validate_terms(terms: Vec<String>) -> (Vec<String>, Vec<TermWarning>) {
     let mut warnings = Vec::new();
     if terms.iter().all(|t| t.starts_with("k")) && terms.len() >= 5 {
-        warnings.push(TermWarning::TooManyKs { example: terms[0].clone() })
+        warnings.push(TermWarning::TooManyKs {
+            example: terms[0].clone(),
+        })
     }
 
     let mut at_terms = terms.iter().enumerate().collect::<Vec<_>>();
@@ -81,7 +103,9 @@ fn validate_terms(terms: Vec<String>) -> (Vec<String>, Vec<TermWarning>) {
     let mut prev_valid_i = 0;
     let mut valid_terms = Vec::with_capacity(at_terms.len());
     for (at, term) in at_terms.into_iter() {
-        if term.is_empty() { continue }
+        if term.is_empty() {
+            continue;
+        }
         if let Err(w) = validate_term(term.clone(), at) {
             warnings.push(w);
             continue;
@@ -134,7 +158,7 @@ impl TrieNode {
                     child_node.insert(&path[1..]);
                     *child_opt = TrieNodeOpt::Branch(child_node);
                 }
-            },
+            }
 
             TrieNodeOpt::Leaf => {
                 unreachable!("validation failed to deduplicate");
@@ -145,7 +169,7 @@ impl TrieNode {
                     unreachable!("validation failed to deduplicate");
                 }
                 child_node.insert(&path[1..]);
-            },
+            }
         }
     }
 

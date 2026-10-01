@@ -1,5 +1,5 @@
-use ocl::{Platform as ClPlatform, Device as ClDevice};
 use anyhow::anyhow;
+use ocl::{Device as ClDevice, Platform as ClPlatform};
 
 /// A simple specifier for an OpenCl device _and_ platform!
 pub struct Device {
@@ -12,8 +12,7 @@ impl Device {
     pub fn list_all() -> anyhow::Result<Vec<Self>> {
         let mut res = Vec::new();
         for platform in ClPlatform::list() {
-            let devices = ClDevice::list_all(platform)
-                .map_err(|e| anyhow!(e))?;
+            let devices = ClDevice::list_all(platform).map_err(|e| anyhow!(e))?;
             for device in devices {
                 res.push(Self { platform, device });
             }
@@ -29,7 +28,8 @@ impl Device {
             all_devices
         } else {
             selection.sort_unstable();
-            all_devices.into_iter()
+            all_devices
+                .into_iter()
                 .enumerate()
                 .filter(|id| selection.binary_search(&id.0).is_ok())
                 .map(|id| id.1)

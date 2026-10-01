@@ -155,7 +155,7 @@ void digest64(UINT data[64], UINT hash[8]) {
 #define CHAIN_SIZE 32
 
 // Converts a sha256 hash to hexadecimal
-void hash_to_hex(const UINT hash[8], UINT hex[64]) {    
+void hash_to_hex(const UINT hash[8], UINT hex[64]) {
     #pragma unroll
     for (int i = 0; i < 16; i += 2) {
         uchar h, h1, h2;
