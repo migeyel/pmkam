@@ -1,19 +1,18 @@
 mod device;
 mod miner;
-mod trie;
 
 use anyhow::anyhow;
 use clap::{App, Arg, SubCommand, crate_authors, crate_description, crate_version};
 use device::Device;
 use miner::Miner;
 use rand::{RngCore, rngs::OsRng};
+use regex_automata::meta::Regex;
 use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
 use std::io::prelude::*;
-use std::sync::{Arc, mpsc};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
-use trie::TrieNode;
 
 const TERMS_PATH: &str = "terms.txt";
 const SOLUTIONS_PATH: &str = "solutions.txt";
@@ -74,15 +73,8 @@ macro_rules! warn {
     }
 }
 
-fn mine(selection: Vec<usize>) -> anyhow::Result<()> {
+fn mine(selection: Vec<usize>, target: [u8; 9]) -> anyhow::Result<()> {
     let devices = Device::select(selection)?;
-
-    let (trie, warnings) = TrieNode::from_file(TERMS_PATH)?;
-    for warning in warnings.iter() {
-        warn!("{}", warning);
-    }
-    let trie_encoded = trie.encode();
-    println!("Term tree size: {} Bytes", trie_encoded.len() * 4);
 
     // Present devices
     for device in devices.iter() {
@@ -91,17 +83,15 @@ fn mine(selection: Vec<usize>) -> anyhow::Result<()> {
 
     // Make miners
     println!("Starting miners...");
-    let trie = Arc::new(trie_encoded);
     let (tx, rx) = mpsc::channel();
     let mut hash_rates = vec![0.0; devices.len()];
     for (i, device) in devices.into_iter().enumerate() {
         let tx = tx.clone();
-        let trie = trie.clone();
         thread::spawn(move || {
             let mut entropy = [0_u8; 16];
             OsRng.fill_bytes(&mut entropy);
 
-            match Miner::new(&entropy, &trie, i, device, tx.clone()) {
+            match Miner::new(&entropy, &target, i, device, tx.clone()) {
                 Ok(mut miner) => {
                     if let Err(e) = miner.mine() {
                         warn!("Miner {} has errored: {}", i, e);
@@ -207,6 +197,18 @@ pub fn main() -> anyhow::Result<()> {
             SubCommand::with_name("mine")
                 .about("Mines for prefixes")
                 .arg(
+                    Arg::with_name("target")
+                        .help("The target address, without leading k")
+                        .required(true)
+                        .validator(|arg| {
+                            if Regex::new("^[a-z0-9]{9}$").unwrap().is_match(&arg) {
+                                Ok(())
+                            } else {
+                                Err("Invalid target address".into())
+                            }
+                        }),
+                )
+                .arg(
                     Arg::with_name("devices")
                         .help("Specify devices to mine with")
                         .long("devices")
@@ -230,12 +232,24 @@ pub fn main() -> anyhow::Result<()> {
             }
         }
         ("mine", Some(matches)) => {
+            let target = matches
+                .value_of("target")
+                .unwrap()
+                .bytes()
+                .map(|b| match b {
+                    b'0'..=b'9' => b - b'0',
+                    b'a'..=b'z' => b - b'a' + 10,
+                    _ => unreachable!(),
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
             let values = matches
                 .values_of("devices")
                 .unwrap_or_default()
                 .map(|v| v.parse().unwrap())
                 .collect::<Vec<usize>>();
-            mine(values)?;
+            mine(values, target)?;
         }
         _ => {
             app.print_help()?;

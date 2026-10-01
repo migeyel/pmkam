@@ -30,7 +30,7 @@ pub struct Miner {
 impl Miner {
     pub fn new(
         entropy: &[u8; 16],
-        trie: &[u32],
+        target: &[u8; 9],
         id: usize,
         device: Device,
         tx: Sender<(usize, Option<Vec<u8>>, f64)>,
@@ -64,11 +64,11 @@ impl Miner {
             .build()
             .map_err(|e| anyhow!(e))?;
 
-        let trie_buffer = Buffer::builder()
+        let target_buffer = Buffer::builder()
             .queue(pq_ocl.queue().clone())
             .flags(MemFlags::new().read_only())
-            .len(trie.len())
-            .copy_host_slice(trie)
+            .len(9)
+            .copy_host_slice(target)
             .build()
             .map_err(|e| anyhow!(e))?;
 
@@ -92,7 +92,7 @@ impl Miner {
             .kernel_builder("mine")
             .global_work_size(local_size as usize)
             .arg_named("entropy", &entropy_buffer)
-            .arg_named("trie", &trie_buffer)
+            .arg_named("target", &target_buffer)
             .arg_named("nonce", 0u64)
             .arg_named("solved", &solved_buffer)
             .arg_named("pkey", &pkey_buffer)
