@@ -3,14 +3,14 @@ mod miner;
 mod trie;
 
 use anyhow::anyhow;
-use clap::{crate_authors, crate_description, crate_version, App, Arg, SubCommand};
+use clap::{App, Arg, SubCommand, crate_authors, crate_description, crate_version};
 use device::Device;
 use miner::Miner;
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
 use std::io::prelude::*;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 use trie::TrieNode;

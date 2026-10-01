@@ -1,9 +1,9 @@
 use crate::device::Device;
 use anyhow::anyhow;
 use ocl::{
+    Buffer, Kernel, MemFlags, ProQue, SpatialDims,
     builders::ProgramBuilder,
     core::{DeviceInfo, DeviceInfoResult},
-    Buffer, Kernel, MemFlags, ProQue, SpatialDims,
 };
 use std::{sync::mpsc::Sender, time::Instant};
 
